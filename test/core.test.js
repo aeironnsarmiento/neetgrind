@@ -4,8 +4,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { extractGrindQuestions } from "../src/data/grindSource.js";
 import { extractNeetcodeProblems } from "../src/data/neetcodeSource.js";
 import { indexNeetcode, mapQuestion, UNMATCHED_OVERRIDES } from "../src/core/mapping.js";
-import { NC_NODES, TOPO_LABELS, TOPO_RANK, ancestorsOf } from "../src/core/roadmap.js";
-import { assignWeeks, buildSchedule, orderQuestions, parseGrindParams, selectQuestions, DEFAULT_SETTINGS } from "../src/core/scheduler.js";
+import { NC_NODES, TOPO_LABELS, TOPO_RANK, ancestorsOf, visibleGraph } from "../src/core/roadmap.js";
+import { assignWeeks, buildSchedule, groupQuestions, orderQuestions, parseGrindParams, selectQuestions, DEFAULT_SETTINGS } from "../src/core/scheduler.js";
 import { dailyTarget, planPosition, paceSummary } from "../src/core/daily.js";
 
 // Fixtures are the live bundles (not committed). Download them with `npm run fixtures`.
@@ -139,4 +139,34 @@ test("daily target spreads backlog over UTC days left in the week", () => {
   assert.equal(planPosition(plan, new Date("2026-08-31T12:00:00Z")).state, "not-started");
   assert.equal(planPosition(plan, new Date("2026-09-15T00:00:00Z")).state, "overtime");
   assert.equal(paceSummary(plan, (q) => q.slug === "q0", new Date("2026-09-08T00:00:00Z")).overdue, 6);
+});
+
+test("parseGrindParams accepts every Grind 75 grouping", () => {
+  for (const g of ["weeks", "topics", "difficulty", "none"]) assert.equal(parseGrindParams(`?grouping=${g}`).grouping, g);
+  assert.equal(parseGrindParams("?grouping=bogus").grouping, "weeks");
+});
+
+test("groupQuestions: weeks, topics, difficulty, none", () => {
+  const qs = [
+    { slug: "a", week: 2, pattern: "Trees", difficulty: "Hard" },
+    { slug: "b", week: 1, pattern: "Stack", difficulty: "Easy" },
+    { slug: "c", week: 1, pattern: "Arrays & Hashing", difficulty: "Medium" },
+  ];
+  const names = (g) => groupQuestions(qs, g).map((x) => x.name);
+  assert.deepEqual(names("weeks"), ["Week 1", "Week 2"]);
+  assert.deepEqual(names("topics"), ["Arrays & Hashing", "Stack", "Trees"]);
+  assert.deepEqual(names("difficulty"), ["Easy", "Medium", "Hard"]);
+  assert.deepEqual(groupQuestions(qs, "none").map((x) => x.questions.length), [3]);
+});
+
+test("visibleGraph rewires edges around hidden topics", () => {
+  const all = NC_NODES.map((n) => n.label);
+  assert.equal(visibleGraph(all).length, 18);
+  // Hide Heap: Intervals and Greedy hang off Trees; Advanced Graphs keeps only Graphs
+  // (Trees is already an ancestor of Graphs, so a direct Trees edge would be redundant).
+  const g = new Map(visibleGraph(all.filter((l) => l !== "Heap / Priority Queue")).map((n) => [n.label, n.parents]));
+  assert.deepEqual(g.get("Intervals"), ["Trees"]);
+  assert.deepEqual(g.get("Greedy"), ["Trees"]);
+  assert.deepEqual(g.get("Advanced Graphs"), ["Graphs"]);
+  assert.ok(!g.has("Heap / Priority Queue"));
 });

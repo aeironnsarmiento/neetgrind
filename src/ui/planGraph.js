@@ -1,6 +1,6 @@
 // SVG roadmap for the custom plan. Same nodes, edges and positions as NeetCode's graph.
 
-import { ancestorsOf, NC_NODES, NC_POSITIONS, NODE_BY_ID } from "../core/roadmap.js";
+import { ancestorsOf, NC_NODES, NC_POSITIONS, visibleGraph } from "../core/roadmap.js";
 import { s } from "./dom.js";
 
 const W = 260;
@@ -26,9 +26,12 @@ function weekRange(weeks) {
 }
 
 // stats: Map<label, { total, done, weeks: number[] }>
+// Topics with no plan questions are left out; with no plan at all, every topic is shown.
 export function renderPlanGraph({ stats, currentWeek, selected, onSelect }) {
+  const inPlan = NC_NODES.map((n) => n.label).filter((label) => stats.get(label)?.total);
+  const graph = visibleGraph(inPlan.length ? inPlan : NC_NODES.map((n) => n.label));
   const boxes = new Map(
-    NC_NODES.map((n) => {
+    graph.map((n) => {
       const p = NC_POSITIONS[n.label];
       return [n.label, { x: p.x * X_STRETCH - W / 2, y: p.y, w: W, h: nodeHeight(n.label) }];
     }),
@@ -42,9 +45,9 @@ export function renderPlanGraph({ stats, currentWeek, selected, onSelect }) {
   let view = { ...base };
 
   const edges = [];
-  for (const n of NC_NODES) {
-    for (const pid of n.parents) {
-      const from = boxes.get(NODE_BY_ID.get(pid).label);
+  for (const n of graph) {
+    for (const parent of n.parents) {
+      const from = boxes.get(parent);
       const to = boxes.get(n.label);
       const x1 = from.x + W / 2;
       const y1 = from.y + from.h;
@@ -54,7 +57,7 @@ export function renderPlanGraph({ stats, currentWeek, selected, onSelect }) {
       edges.push(
         s("path", {
           class: "ng-edge",
-          "data-from": NODE_BY_ID.get(pid).label,
+          "data-from": parent,
           "data-to": n.label,
           d: `M${x1},${y1} C${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`,
         }),
@@ -62,7 +65,7 @@ export function renderPlanGraph({ stats, currentWeek, selected, onSelect }) {
     }
   }
 
-  const nodes = NC_NODES.map((n) => {
+  const nodes = graph.map((n) => {
     const b = boxes.get(n.label);
     const st = stats.get(n.label) ?? { total: 0, done: 0, weeks: [] };
     const pct = st.total ? st.done / st.total : 0;

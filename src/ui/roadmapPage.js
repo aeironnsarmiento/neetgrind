@@ -3,8 +3,7 @@
 
 import { dailyTarget, paceSummary, todayUtcISO, utcDay } from "../core/daily.js";
 import { indexNeetcode, problemUrl } from "../core/mapping.js";
-import { TOPO_LABELS } from "../core/roadmap.js";
-import { buildSchedule, DEFAULT_SETTINGS, DIFFICULTIES, ORDERS, totalHours } from "../core/scheduler.js";
+import { buildSchedule, DEFAULT_SETTINGS, DIFFICULTIES, groupQuestions, GROUPING_LABELS, GROUPINGS, ORDERS, totalHours } from "../core/scheduler.js";
 import { GRIND_PAGE, loadGrindQuestions } from "../data/grindSource.js";
 import { lcDone, makeIsDone } from "../data/neetcodeProgress.js";
 import { loadNeetcodeProblems } from "../data/neetcodeSource.js";
@@ -279,17 +278,13 @@ export function initRoadmapPage() {
     const grouping = sched.settings.grouping ?? "weeks";
     const qs = state.selected ? sched.questions.filter((q) => q.pattern === state.selected) : sched.questions;
     const current = paceSummary(sched, isDone).pos.week;
-    const groups = new Map();
-    if (grouping === "topics") {
-      for (const label of TOPO_LABELS) groups.set(label, []);
-      for (const q of qs) groups.get(q.pattern).push(q);
-    } else {
-      for (const q of qs) {
-        const key = `Week ${q.week}`;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(q);
-      }
-    }
+    const groups = groupQuestions(qs, grouping);
+    // Tag each row with whatever the grouping and topic filter don't already show.
+    const tagFor = (q) => {
+      if (grouping === "weeks") return state.selected ? null : q.pattern;
+      if (grouping === "topics" || state.selected) return `W${q.week}`;
+      return `${q.pattern} · W${q.week}`;
+    };
     const setGrouping = (g) => {
       planStore.update({ settings: { ...sched.settings, grouping: g } });
       render();
@@ -305,21 +300,19 @@ export function initRoadmapPage() {
       ),
       h("div", { class: "ng-row" },
         h("div", { class: "ng-toggle ng-toggle-inline", role: "group", "aria-label": "Group by" },
-          ["weeks", "topics"].map((g) =>
-            h("button", { class: "ng-seg", "aria-pressed": String(grouping === g), onclick: () => setGrouping(g) }, g === "weeks" ? "By week" : "By topic"),
+          GROUPINGS.map((g) =>
+            h("button", { class: "ng-seg", "aria-pressed": String(grouping === g), onclick: () => setGrouping(g) }, GROUPING_LABELS[g]),
           ),
         ),
         state.selected ? h("button", { class: "ng-btn ng-btn-ghost", onclick: () => { state.selected = null; render(); } }, "Show all topics") : null,
       ),
       h("div", { class: "ng-groups" },
-        [...groups.entries()]
-          .filter(([, list]) => list.length)
-          .map(([name, list]) =>
-            h("details", { class: "ng-group", open: grouping === "topics" || Boolean(state.selected) || name === `Week ${current}` },
-              h("summary", null, h("span", null, name), h("span", { class: "ng-muted ng-small" }, `${doneIn(list)}/${list.length}`)),
-              list.map((q) => questionRow(q, isDone, { tag: grouping === "topics" ? `W${q.week}` : state.selected ? null : q.pattern })),
-            ),
+        groups.map(({ name, questions: list }) =>
+          h("details", { class: "ng-group", open: grouping !== "weeks" || Boolean(state.selected) || name === `Week ${current}` },
+            h("summary", null, h("span", null, name), h("span", { class: "ng-muted ng-small" }, `${doneIn(list)}/${list.length}`)),
+            list.map((q) => questionRow(q, isDone, { tag: tagFor(q) })),
           ),
+        ),
       ),
     );
   }
@@ -330,6 +323,7 @@ export function initRoadmapPage() {
     const hours = h("input", { class: "ng-input", type: "number", min: 1, max: 40, value: s.hours });
     const diffs = DIFFICULTIES.map((d) => h("input", { type: "checkbox", value: d, checked: s.difficulty.includes(d) }));
     const order = h("select", { class: "ng-input" }, ORDERS.map((o) => h("option", { value: o, selected: o === s.order }, ORDER_LABELS[o])));
+    const grouping = h("select", { class: "ng-input" }, GROUPINGS.map((g) => h("option", { value: g, selected: g === (s.grouping ?? "weeks") }, GROUPING_LABELS[g])));
     const start = h("input", { class: "ng-input", type: "date", value: sched?.startDate ?? todayUtcISO() });
     const status = h("div", { class: "ng-status", role: "status" });
     const submit = h("button", { class: "ng-btn ng-btn-primary", type: "submit" }, sched ? "Rebuild plan" : "Create plan");
@@ -338,6 +332,7 @@ export function initRoadmapPage() {
       const p = new URLSearchParams({ weeks: weeks.value, hours: hours.value });
       for (const cb of diffs) if (cb.checked) p.append("difficulty", cb.value);
       if (order.value !== "roadmap") p.set("order", order.value);
+      p.set("grouping", grouping.value);
       return `${GRIND_PAGE}?${p}`;
     };
 
@@ -351,6 +346,7 @@ export function initRoadmapPage() {
         hours: Math.min(40, Math.max(1, Math.round(+hours.value || 8))),
         difficulty,
         order: order.value,
+        grouping: grouping.value,
         mode: "preferences",
       };
       submit.disabled = true;
@@ -387,7 +383,10 @@ export function initRoadmapPage() {
         h("legend", null, "Difficulty"),
         h("div", { class: "ng-row" }, diffs.map((cb) => h("label", { class: "ng-check-label" }, cb, cb.value))),
       ),
-      h("label", { class: "ng-field" }, h("span", null, "Order"), order),
+      h("div", { class: "ng-grid2" },
+        h("label", { class: "ng-field" }, h("span", null, "Order"), order),
+        h("label", { class: "ng-field" }, h("span", null, "Group by"), grouping),
+      ),
       h("label", { class: "ng-field" }, h("span", null, "Start date (UTC)"), start),
       h("p", { class: "ng-muted ng-small" }, "Uses Grind 75's question selection. Topic filters from Grind 75 are kept."),
       h("div", { class: "ng-row" },

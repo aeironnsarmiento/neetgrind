@@ -1,7 +1,7 @@
 // Floating "Send to NeetCode" panel on the Grind 75 page.
 
 import { todayUtcISO } from "../core/daily.js";
-import { parseGrindParams, selectQuestions, totalHours } from "../core/scheduler.js";
+import { GROUPING_LABELS, parseGrindParams, selectQuestions, totalHours } from "../core/scheduler.js";
 import { chunkUrlsFromDocument, loadGrindQuestions } from "../data/grindSource.js";
 import { createPlan, planStore } from "../data/planStore.js";
 import { storage } from "../platform/storage.js";
@@ -9,7 +9,7 @@ import { fill, h, injectStyle } from "./dom.js";
 import css from "./styles.css";
 
 const ORDER_LABELS = {
-  difficulty: "Difficulty (Grind 75 default)",
+  difficulty: "Difficulty",
   topics: "Topics",
   all_rounded: "All rounded (priority)",
   roadmap: "NeetCode roadmap",
@@ -21,13 +21,19 @@ export function initGrindPanel() {
   let loadError = null;
   let lastSearch = null;
   let collapsed = storage.get("grindPanelCollapsed", false);
-  // Follows the page's "Order by" until the user picks something else here.
+  // Follow the page's "Order by" / "Group by" until the user picks something else here.
   let orderPicked = false;
+  let groupingPicked = false;
 
   const orderSelect = h(
     "select",
     { class: "ng-input", onchange: () => ((orderPicked = true), render()) },
     Object.entries(ORDER_LABELS).map(([value, label]) => h("option", { value }, label)),
+  );
+  const groupingSelect = h(
+    "select",
+    { class: "ng-input", onchange: () => ((groupingPicked = true), render()) },
+    Object.entries(GROUPING_LABELS).map(([value, label]) => h("option", { value }, label)),
   );
   const startInput = h("input", { class: "ng-input", type: "date", value: todayUtcISO() });
   const body = h("div", { class: "ng-grind-body" });
@@ -43,7 +49,10 @@ export function initGrindPanel() {
       "div",
       { class: "ng-grind-content" },
       body,
-      h("label", { class: "ng-field" }, h("span", null, "Order on NeetCode"), orderSelect),
+      h("div", { class: "ng-grid2" },
+        h("label", { class: "ng-field" }, h("span", null, "Order"), orderSelect),
+        h("label", { class: "ng-field" }, h("span", null, "Group by"), groupingSelect),
+      ),
       h("label", { class: "ng-field" }, h("span", null, "Start date (UTC)"), startInput),
       sendBtn,
       status,
@@ -58,12 +67,13 @@ export function initGrindPanel() {
   }
 
   function settings() {
-    return { ...parseGrindParams(location.search), order: orderSelect.value };
+    return { ...parseGrindParams(location.search), order: orderSelect.value, grouping: groupingSelect.value };
   }
 
   function render() {
-    const pageOrder = parseGrindParams(location.search).grindOrder;
-    if (!orderPicked && pageOrder in ORDER_LABELS) orderSelect.value = pageOrder;
+    const page = parseGrindParams(location.search);
+    if (!orderPicked && page.grindOrder in ORDER_LABELS) orderSelect.value = page.grindOrder;
+    if (!groupingPicked) groupingSelect.value = page.grouping;
     panel.classList.toggle("ng-collapsed", collapsed);
     toggleBtn.textContent = collapsed ? "+" : "–";
     toggleBtn.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");

@@ -13,19 +13,19 @@ Tampermonkey userscript (proof of concept). The core is written to port to a Chr
 ## Use
 
 1. On Grind 75, set weeks, hours and difficulty as usual. A **NeetGrind** panel (bottom right) shows the same question count as the page.
-2. Choose a start date (the order defaults to the page's), then **Send to NeetCode**.
+2. Choose a start date (order and grouping default to the page's), then **Send to NeetCode**.
 3. On neetcode.io/roadmap, switch **NeetCode → My Plan** (top left of the graph).
-   - Graph: same 18 topics and edges as NeetCode. Each node shows done/total and which weeks it falls in. The current week's nodes are outlined. Topics not in your plan are dimmed.
+   - Graph: same 18 topics and edges as NeetCode. Each node shows done/total and which weeks it falls in. The current week's nodes are outlined. Topics with no questions in your plan are hidden, and the edges are joined up around them.
    - **My Plan** card (above the streak calendar): the current week, pace, today's questions, and **Solve next**.
-   - Click a node or **All questions** to see the list, grouped **by week** or **by topic**.
-   - **Re-plan** changes weeks, hours, difficulty, order or start date without going back to Grind 75.
+   - Click a node or **All questions** to see the list. Group it by **Weeks**, **Topics**, **Difficulty** or **None**, the same choices as Grind 75.
+   - **Re-plan** changes weeks, hours, difficulty, order, grouping or start date without going back to Grind 75.
 
 ### Defaults: same as Grind 75
 
 - **Based on preferences, order by difficulty, grouped by week**, the same as Grind 75's page, so your weeks on NeetCode hold exactly the questions Grind 75 shows.
-- The panel's "Order on NeetCode" follows the page's **Order by** dropdown until you pick something else in the panel.
+- The panel's **Order** and **Group by** follow the page's dropdowns until you pick something else in the panel.
 - **NeetCode roadmap** order is optional. It keeps the same questions but sorts them along NeetCode's prerequisite graph (Arrays & Hashing → … → Math & Geometry, easiest first within each topic), so each week covers one area of the graph.
-- The graph is always organized by topic, since each node is a topic. "By topic" in the question list only changes how the list is grouped.
+- The graph is always organized by topic, since each node is a topic. Grouping only changes how the question list is organized.
 
 ## How it works
 

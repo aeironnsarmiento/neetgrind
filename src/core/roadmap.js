@@ -80,3 +80,30 @@ export function ancestorsOf(label) {
   }
   return out;
 }
+
+// Subgraph of just `visible` labels. Edges through hidden nodes are rewired to the nearest
+// visible ancestors, then transitively reduced so a skipped edge doesn't duplicate a path.
+export function visibleGraph(visible) {
+  const keep = new Set(visible);
+  const nearestVisible = (node) => {
+    const out = new Set();
+    const stack = [...node.parents];
+    const seen = new Set();
+    while (stack.length) {
+      const id = stack.pop();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const p = NODE_BY_ID.get(id);
+      if (keep.has(p.label)) out.add(p.label);
+      else stack.push(...p.parents);
+    }
+    return [...out];
+  };
+  return NC_NODES.filter((n) => keep.has(n.label)).map((n) => {
+    const parents = nearestVisible(n);
+    return {
+      label: n.label,
+      parents: parents.filter((p) => !parents.some((q) => q !== p && ancestorsOf(q).has(p))),
+    };
+  });
+}

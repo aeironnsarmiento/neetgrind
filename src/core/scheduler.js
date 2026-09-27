@@ -2,7 +2,7 @@
 // (techinterviewhandbook.org/grind75, client chunk logic), plus a NeetCode "roadmap" order.
 
 import { mapQuestion } from "./mapping.js";
-import { TOPO_RANK } from "./roadmap.js";
+import { TOPO_LABELS, TOPO_RANK } from "./roadmap.js";
 
 // Grind 75 budgets each question at 1.96x its listed duration.
 export const COST_FACTOR = 1.96;
@@ -28,7 +28,9 @@ export const GRIND_TOPIC_RANK = {
   math: 22,
 };
 export const ORDERS = ["difficulty", "topics", "all_rounded", "roadmap"];
-export const GROUPINGS = ["weeks", "topics"];
+// Same choices as Grind 75's "Group by". Topics are NeetCode's roadmap topics here.
+export const GROUPINGS = ["weeks", "topics", "difficulty", "none"];
+export const GROUPING_LABELS = { weeks: "Weeks", topics: "Topics", difficulty: "Difficulty", none: "None" };
 
 export const DEFAULT_SETTINGS = {
   weeks: 8,
@@ -61,7 +63,7 @@ export function parseGrindParams(search) {
     topics: list("topics"),
     mode: p.get("mode") === "all" ? "all" : "preferences",
     grindOrder: p.get("order") ?? "difficulty",
-    grouping: p.get("grouping") === "topics" ? "topics" : "weeks",
+    grouping: GROUPINGS.includes(p.get("grouping")) ? p.get("grouping") : "weeks",
   };
 }
 
@@ -136,4 +138,25 @@ export function buildSchedule(allGrind, settings, ncIndex, slugs = null) {
     fits: totalHours(questions) <= settings.hours * settings.weeks,
     missing: slugs ? slugs.length - picked.length : 0,
   };
+}
+
+// Returns [{ name, questions }] in display order, skipping empty groups.
+export function groupQuestions(questions, grouping) {
+  const groups = new Map();
+  const add = (name, q) => {
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(q);
+  };
+  if (grouping === "topics") {
+    for (const label of TOPO_LABELS) groups.set(label, []);
+    for (const q of questions) add(q.pattern, q);
+  } else if (grouping === "difficulty") {
+    for (const d of DIFFICULTIES) groups.set(d, []);
+    for (const q of questions) add(q.difficulty, q);
+  } else if (grouping === "none") {
+    groups.set("All questions", [...questions]);
+  } else {
+    for (const q of [...questions].sort((a, b) => a.week - b.week)) add(`Week ${q.week}`, q);
+  }
+  return [...groups.entries()].filter(([, list]) => list.length).map(([name, list]) => ({ name, questions: list }));
 }
