@@ -19,6 +19,7 @@
 - **Your plan, NeetCode's graph.** Pick weeks, hours and difficulty on Grind 75. The same questions show up on NeetCode's roadmap, with progress for each topic.
 - **Today's questions.** A card above NeetCode's streak calendar shows what to solve today, the week you're in, and whether you're behind.
 - **Research-backed order.** The default order starts each topic on its own, then mixes topics together and spaces out reviews. See [how it works](docs/research.md).
+- **Company tags.** Pick the companies you're interviewing with. Their most-asked LeetCode questions from the last 30 days, 3 months, 6 months or all time go into your plan first, filtered by your difficulty and topics. Every company-tagged question shows a 🏢 badge naming the company.
 - **Your choice of topics.** Turn off topics you don't need (e.g. Bit Manipulation), and their hours go to other questions.
 - **Read-only.** NeetGrind reads your NeetCode progress from your browser and never writes to NeetCode.
 
@@ -35,7 +36,19 @@ Updates install automatically through Tampermonkey.
 2. **Open [neetcode.io/roadmap](https://neetcode.io/roadmap)** and switch **NeetCode → My Plan** (top left).
 3. **Solve.** Click **Solve next**, or click a topic to see its questions. Your progress updates as you solve problems on NeetCode.
 
-You can also change weeks, hours, difficulty, order, grouping or topics any time with **Re-plan** on NeetCode.
+You can also change weeks, hours, difficulty, order, grouping, topics or companies any time with **Re-plan** on NeetCode.
+
+### Company tags
+
+In **Re-plan → Company tags**:
+1. Add one or more companies.
+2. Pick how recent the questions should be: 30 days, 3 months, 6 months or all time.
+3. Pick how many to include:
+   - **Top N per company**: the N most frequent questions for each company.
+   - **Share of time**: company questions fill that % of your hours, taking turns between companies.
+4. Optionally, **Choose questions…** to hand-pick specific ones. Picked questions are always included.
+
+Company questions are chosen before Grind 75's, and Grind 75 fills whatever time is left. With too little time, Grind 75 questions are dropped first. Questions Grind 75 doesn't have get a time estimate (Easy 20m, Medium 30m, Hard 40m) and a topic from their LeetCode tags.
 
 ### Reading the graph
 
@@ -71,6 +84,9 @@ No. NeetGrind only reads the progress NeetCode already stores in your browser.
 **Where is my plan stored?**
 In Tampermonkey's storage on your machine. That storage is shared between Grind 75 and NeetCode, which is how the plan gets from one to the other.
 
+**Where do the company lists come from? Do they update?**
+They come from [liquidslr/leetcode-company-wise-problems](https://github.com/liquidslr/leetcode-company-wise-problems). NeetGrind checks it about once a day. When there's newer data, your plan card shows **Company lists updated · Apply**. Your plan doesn't change until you click it, so questions don't move around mid-week.
+
 **It stopped working after a site update.**
 Grind 75 and NeetCode are closed source and change without notice. Please [open an issue](https://github.com/aeironnsarmiento/neetgrind/issues).
 
@@ -95,12 +111,13 @@ How it works:
 - Its scheduler is re-implemented and tested against the site's own results.
 - NeetCode's problem list is read from its site.
 - Questions are matched by LeetCode slug: 154 of 169 match. The other 15 are placed by hand.
+- Company lists are read from GitHub when you pick companies, pinned to the repo's latest commit, and saved with your plan. They aren't bundled either.
 
 Pull requests are welcome. Please run `npm test` and `npm run build` and commit `dist/` with your change.
 
 ## Credits
 
-Question selection and time estimates come from [Grind 75](https://www.techinterviewhandbook.org/grind75) by Yangshun Tay. The roadmap graph and problems are from [NeetCode](https://neetcode.io). NeetGrind is not affiliated with either.
+Question selection and time estimates come from [Grind 75](https://www.techinterviewhandbook.org/grind75) by Yangshun Tay. Company-tagged lists come from [leetcode-company-wise-problems](https://github.com/liquidslr/leetcode-company-wise-problems). The roadmap graph and problems are from [NeetCode](https://neetcode.io). NeetGrind is not affiliated with either.
 
 ## License
 

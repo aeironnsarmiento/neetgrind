@@ -78,7 +78,12 @@ export function initGrindPanel() {
     const diffs = s.difficulty.length === 3 ? "All difficulties" : s.difficulty.join(", ");
     const topics = s.topics ? `${s.topics.length} topics` : "All topics";
     const lines = [h("div", null, `${s.weeks} weeks · ${s.hours} h/week`), h("div", { class: "ng-muted" }, `${diffs} · ${topics}`)];
-    const excluded = planStore.load()?.settings?.excludedTopics ?? [];
+    const saved = planStore.load();
+    const excluded = saved?.settings?.excludedTopics ?? [];
+    const companies = saved?.settings?.company?.names ?? [];
+    if (companies.length) {
+      lines.push(h("div", { class: "ng-muted ng-small" }, `Companies: ${companies.join(", ")}. Their questions go in first; edit on NeetCode.`));
+    }
     if (excluded.length) {
       lines.push(h("div", { class: "ng-muted ng-small" }, `Skipping on NeetCode: ${excluded.join(", ")}. The count there will differ.`));
     }
@@ -98,11 +103,15 @@ export function initGrindPanel() {
 
   function send() {
     const s = settings();
-    // Topic exclusions are made on NeetCode; keep them when a new plan is sent from here.
-    const excludedTopics = planStore.load()?.settings?.excludedTopics ?? [];
-    planStore.save(createPlan(questions, { ...s, excludedTopics }, startInput.value || todayUtcISO(), "grind75"));
+    // Topic exclusions and company tags are set on NeetCode; keep them when a new plan is sent from here.
+    const prev = planStore.load();
+    const excludedTopics = prev?.settings?.excludedTopics ?? [];
+    const company = prev?.settings?.company ?? null;
+    const companyData = { companyPool: prev?.companyPool ?? [], companyVersion: prev?.companyVersion ?? null };
+    planStore.save(createPlan(questions, { ...s, excludedTopics, company }, startInput.value || todayUtcISO(), "grind75", companyData));
+    const adjusted = excludedTopics.length || company?.names?.length || company?.picked?.length;
     fill(status,
-      excludedTopics.length ? "Saved. " : `Saved ${selectQuestions(questions, s).length} questions. `,
+      adjusted ? "Saved. " : `Saved ${selectQuestions(questions, s).length} questions. `,
       h("a", { href: "https://neetcode.io/roadmap", target: "_blank", rel: "noopener" }, "Open NeetCode roadmap →"),
     );
   }

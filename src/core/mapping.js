@@ -41,6 +41,45 @@ export const GRIND_TOPIC_FALLBACK = {
   math: "Math & Geometry",
 };
 
+// LeetCode topic tags → NeetCode topic, for company questions neither NeetCode nor Grind 75 has.
+// First match wins, so specific structures come before generic ones (BFS/DFS last: trees use them too).
+export const LC_TOPIC_PATTERNS = [
+  [["Trie"], "Tries"],
+  [["Backtracking"], "Backtracking"],
+  [["Heap (Priority Queue)"], "Heap / Priority Queue"],
+  [
+    [
+      "Shortest Path", "Minimum Spanning Tree", "Eulerian Circuit", "Eulerian Path", "Strongly Connected Component",
+      "Dijkstra's Algorithm", "Bellman–Ford Algorithm", "Floyd–Warshall Algorithm", "Prim's Algorithm", "Kruskal's Algorithm",
+    ],
+    "Advanced Graphs",
+  ],
+  [["Linked List", "Doubly-Linked List"], "Linked List"],
+  [["Tree", "Binary Tree", "Binary Search Tree", "DP on Trees", "Lowest Common Ancestor"], "Trees"],
+  // LeetCode renamed some tags (Graph → Graph Theory, Union Find → Union-Find); match both.
+  [["Graph", "Graph Theory", "Topological Sort", "Union Find", "Union-Find", "Directed Acyclic Graph", "Bipartite Graph"], "Graphs"],
+  [["Sliding Window", "Monotonic Queue"], "Sliding Window"],
+  [["Two Pointers"], "Two Pointers"],
+  [["Binary Search"], "Binary Search"],
+  [["Stack", "Monotonic Stack"], "Stack"],
+  [["Dynamic Programming", "Memoization", "Knapsack Problem", "0-1 Knapsack"], "1-D Dynamic Programming"],
+  [["Greedy"], "Greedy"],
+  [["Line Sweep", "Sweep Line"], "Intervals"],
+  [["Bit Manipulation", "Bitmask"], "Bit Manipulation"],
+  [["Math", "Geometry", "Matrix", "Number Theory"], "Math & Geometry"],
+  [["Breadth-First Search", "Depth-First Search"], "Graphs"],
+];
+
+export function patternFromLcTopics(tags) {
+  const has = new Set(tags ?? []);
+  for (const [names, label] of LC_TOPIC_PATTERNS) {
+    if (!names.some((n) => has.has(n))) continue;
+    if (label === "1-D Dynamic Programming" && has.has("Matrix")) return "2-D Dynamic Programming";
+    return label;
+  }
+  return tags?.length ? "Arrays & Hashing" : null;
+}
+
 export function normalizeSlug(slug) {
   return String(slug ?? "")
     .trim()
@@ -73,7 +112,8 @@ export function mapQuestion(q, ncIndex) {
   }
   return {
     ...q,
-    pattern: UNMATCHED_OVERRIDES[q.slug] ?? GRIND_TOPIC_FALLBACK[q.topic] ?? "Arrays & Hashing",
+    pattern:
+      UNMATCHED_OVERRIDES[q.slug] ?? patternFromLcTopics(q.lcTopics) ?? GRIND_TOPIC_FALLBACK[q.topic] ?? "Arrays & Hashing",
     ncTitle: null,
     ncLink: null,
     neetcode150: false,

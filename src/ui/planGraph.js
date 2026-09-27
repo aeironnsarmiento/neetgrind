@@ -25,7 +25,7 @@ function weekRange(weeks) {
   return lo === hi ? `W${lo}` : `W${lo}–${hi}`;
 }
 
-// stats: Map<label, { total, done, weeks: number[] }>
+// stats: Map<label, { total, done, weeks: number[], company?: number }>
 // Topics with no plan questions are left out; with no plan at all, every topic is shown.
 // focus: labels to outline (today's topics).
 export function renderPlanGraph({ stats, focus = new Set(), selected, onSelect }) {
@@ -81,7 +81,8 @@ export function renderPlanGraph({ stats, focus = new Set(), selected, onSelect }
       .filter(Boolean)
       .join(" ");
     const barY = b.h - PAD - 10;
-    const meta = st.total ? `${st.done}/${st.total}  ·  ${weekRange(st.weeks)}` : "not in plan";
+    const company = st.company ? `  ·  🏢 ${st.company}` : "";
+    const meta = st.total ? `${st.done}/${st.total}  ·  ${weekRange(st.weeks)}${company}` : "not in plan";
     return s(
       "g",
       {
