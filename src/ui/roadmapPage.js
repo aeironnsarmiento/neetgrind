@@ -566,26 +566,27 @@ export function initRoadmapPage() {
 
   function companyFields(co) {
     const names = state.companyNames;
-    const refocus = () => ui.drawer.querySelector(".ng-co-input")?.focus();
-    const addCompany = (value) => {
-      const name = names?.find((n) => n.toLowerCase() === value.trim().toLowerCase());
-      if (!name) return;
-      if (!co.names.includes(name)) co.names.push(name);
-      render();
-      refocus();
-    };
-    const input = h("input", {
-      class: "ng-input ng-co-input",
-      list: "ng-co-names",
-      placeholder: !names ? "Loading companies…" : names.length ? "Add a company…" : "Couldn't load companies",
-      disabled: !names?.length,
-      onchange: (e) => addCompany(e.target.value),
-      onkeydown: (e) => {
-        if (e.key !== "Enter") return;
-        e.preventDefault();
-        addCompany(e.target.value);
+    // Native dropdown of every company in the source repo; type a letter to jump. Chosen ones are left out.
+    const available = (names ?? []).filter((n) => !co.names.includes(n));
+    const picker = h(
+      "select",
+      {
+        class: "ng-input ng-co-select",
+        "aria-label": "Add a company",
+        disabled: !names?.length,
+        onchange: (e) => {
+          const name = e.target.value;
+          if (!name || co.names.includes(name)) return;
+          co.names.push(name);
+          render();
+          ui.drawer.querySelector(".ng-co-select")?.focus();
+        },
       },
-    });
+      h("option", { value: "", selected: true },
+        !names ? "Loading companies…" : names.length ? `Add a company (${available.length} available)…` : "Couldn't load companies",
+      ),
+      available.map((n) => h("option", { value: n }, n)),
+    );
     const windowSelect = h("select", { class: "ng-input", onchange: (e) => (co.window = e.target.value) },
       Object.keys(WINDOWS).map((w) => h("option", { value: w, selected: w === co.window }, WINDOW_LABELS[w])),
     );
@@ -611,8 +612,7 @@ export function initRoadmapPage() {
         ),
         co.names.length ? null : h("span", { class: "ng-muted ng-small" }, "None. Add companies you're interviewing with."),
       ),
-      input,
-      h("datalist", { id: "ng-co-names" }, (names ?? []).map((n) => h("option", { value: n }))),
+      picker,
       h("div", { class: "ng-grid2" },
         h("label", { class: "ng-field" }, h("span", null, "Asked in the last"), windowSelect),
         h("label", { class: "ng-field" }, h("span", null, "How many"), limitSelect),
