@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/dist/neetgrind.user.js
 // @license      MIT
 // @icon         https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/assets/icon-64.png
-// @version      0.1.0
+// @version      0.2.0
 // @description  Build a custom Grind 75 study plan and view it on NeetCode's roadmap graph.
 // @match        https://www.techinterviewhandbook.org/grind75*
 // @match        https://neetcode.io/*
@@ -17,6 +17,7 @@
 // @connect      www.techinterviewhandbook.org
 // @connect      neetcode.io
 // @connect      raw.githubusercontent.com
+// @connect      api.github.com
 // @run-at       document-idle
 // @noframes
 // ==/UserScript==
@@ -99,6 +100,49 @@
     matrix: "Math & Geometry",
     math: "Math & Geometry"
   };
+  var LC_TOPIC_PATTERNS = [
+    [["Trie"], "Tries"],
+    [["Backtracking"], "Backtracking"],
+    [["Heap (Priority Queue)"], "Heap / Priority Queue"],
+    [
+      [
+        "Shortest Path",
+        "Minimum Spanning Tree",
+        "Eulerian Circuit",
+        "Eulerian Path",
+        "Strongly Connected Component",
+        "Dijkstra's Algorithm",
+        "Bellman\u2013Ford Algorithm",
+        "Floyd\u2013Warshall Algorithm",
+        "Prim's Algorithm",
+        "Kruskal's Algorithm"
+      ],
+      "Advanced Graphs"
+    ],
+    [["Linked List", "Doubly-Linked List"], "Linked List"],
+    [["Tree", "Binary Tree", "Binary Search Tree", "DP on Trees", "Lowest Common Ancestor"], "Trees"],
+    // LeetCode renamed some tags (Graph → Graph Theory, Union Find → Union-Find); match both.
+    [["Graph", "Graph Theory", "Topological Sort", "Union Find", "Union-Find", "Directed Acyclic Graph", "Bipartite Graph"], "Graphs"],
+    [["Sliding Window", "Monotonic Queue"], "Sliding Window"],
+    [["Two Pointers"], "Two Pointers"],
+    [["Binary Search"], "Binary Search"],
+    [["Stack", "Monotonic Stack"], "Stack"],
+    [["Dynamic Programming", "Memoization", "Knapsack Problem", "0-1 Knapsack"], "1-D Dynamic Programming"],
+    [["Greedy"], "Greedy"],
+    [["Line Sweep", "Sweep Line"], "Intervals"],
+    [["Bit Manipulation", "Bitmask"], "Bit Manipulation"],
+    [["Math", "Geometry", "Matrix", "Number Theory"], "Math & Geometry"],
+    [["Breadth-First Search", "Depth-First Search"], "Graphs"]
+  ];
+  function patternFromLcTopics(tags) {
+    const has = new Set(tags ?? []);
+    for (const [names, label] of LC_TOPIC_PATTERNS) {
+      if (!names.some((n) => has.has(n))) continue;
+      if (label === "1-D Dynamic Programming" && has.has("Matrix")) return "2-D Dynamic Programming";
+      return label;
+    }
+    return tags?.length ? "Arrays & Hashing" : null;
+  }
   function normalizeSlug(slug) {
     return String(slug ?? "").trim().replace(/^\/+|\/+$/g, "").toLowerCase();
   }
@@ -125,7 +169,7 @@
     }
     return {
       ...q,
-      pattern: UNMATCHED_OVERRIDES[q.slug] ?? GRIND_TOPIC_FALLBACK[q.topic] ?? "Arrays & Hashing",
+      pattern: UNMATCHED_OVERRIDES[q.slug] ?? patternFromLcTopics(q.lcTopics) ?? GRIND_TOPIC_FALLBACK[q.topic] ?? "Arrays & Hashing",
       ncTitle: null,
       ncLink: null,
       neetcode150: false,
@@ -386,6 +430,9 @@
   };
   var GROUPINGS = ["weeks", "topics", "difficulty", "none"];
   var GROUPING_LABELS = { weeks: "Weeks", topics: "Topics", difficulty: "Difficulty", none: "None" };
+  var DEFAULT_COMPANY = { names: [], window: "6mo", limit: "count", count: 25, share: 50, picked: [] };
+  var COMPANY_LIMITS = { count: "Top N per company", share: "Share of time" };
+  var EST_DURATION = { Easy: 20, Medium: 30, Hard: 40 };
   var DEFAULT_SETTINGS = {
     weeks: 8,
     hours: 8,
@@ -396,7 +443,8 @@
     // NeetCode roadmap topics to leave out
     mode: "preferences",
     order: "recommended",
-    grouping: "weeks"
+    grouping: "weeks",
+    company: DEFAULT_COMPANY
   };
   var costOf = (q) => COST_FACTOR2 * q.duration;
   function parseGrindParams(search) {
@@ -420,13 +468,12 @@
       grouping: GROUPINGS.includes(p.get("grouping")) ? p.get("grouping") : "weeks"
     };
   }
-  function selectQuestions(all, settings) {
+  function selectQuestions(all, settings, budget = 60 * settings.hours * settings.weeks) {
     const excluded = new Set(settings.excludedTopics ?? []);
     const byPriority = [...all].sort((a, b) => a.priority - b.priority).filter((q) => !excluded.has(q.pattern));
     if (settings.mode === "all") return byPriority;
     const diffs = new Set(settings.difficulty ?? DIFFICULTIES);
     const topics = settings.topics ? new Set(settings.topics) : null;
-    let budget = 60 * settings.hours * settings.weeks;
     const picked = [];
     for (const q of byPriority) {
       if (!diffs.has(q.difficulty) || topics && !topics.has(q.topic)) continue;
@@ -463,23 +510,108 @@
   function totalHours(questions) {
     return Math.ceil(Math.ceil(questions.reduce((sum, q) => sum + costOf(q), 0)) / 60);
   }
-  function buildSchedule(pool, settings, ncIndex, slugs = null) {
-    const mapped = pool.map((q) => mapQuestion(q, ncIndex));
+  function companySettings(settings) {
+    return { ...DEFAULT_COMPANY, ...settings?.company };
+  }
+  function withCompanies(grindMapped, companyPool, ncIndex) {
+    const tags = new Map(companyPool.map((r) => [r.slug, r.tags]));
+    const grind = grindMapped.map((q) => tags.has(q.slug) ? { ...q, companies: tags.get(q.slug) } : q);
+    const inGrind = new Set(grindMapped.map((q) => q.slug));
+    const extra = companyPool.filter((r) => !inGrind.has(r.slug)).map(
+      (r, i) => mapQuestion(
+        {
+          slug: r.slug,
+          title: r.title,
+          url: `https://leetcode.com/problems/${r.slug}/`,
+          duration: EST_DURATION[r.difficulty] ?? 30,
+          difficulty: r.difficulty,
+          topic: null,
+          priority: 1e3 + i,
+          premium: false,
+          lcTopics: r.lcTopics,
+          companies: r.tags
+        },
+        ncIndex
+      )
+    );
+    return { grind, extra };
+  }
+  var bestFrequency = (q) => Math.max(0, ...(q.companies ?? []).map((t) => t.frequency));
+  var frequencyFor = (q, company) => q.companies?.find((t) => t.company === company)?.frequency ?? -1;
+  function selectCompanyQuestions(candidates, settings) {
+    const co = companySettings(settings);
+    if (!co.names.length && !co.picked.length) return [];
+    const budget = 60 * settings.hours * settings.weeks;
+    const bySlug = new Map(candidates.map((q) => [q.slug, q]));
+    const picked = co.picked.map((s2) => bySlug.get(s2)).filter(Boolean);
+    const pickedSet = new Set(picked.map((q) => q.slug));
+    const diffs = new Set(settings.difficulty ?? DIFFICULTIES);
+    const excluded = new Set(settings.excludedTopics ?? []);
+    const eligible = candidates.filter(
+      (q) => !pickedSet.has(q.slug) && diffs.has(q.difficulty) && !excluded.has(q.pattern) && q.companies?.length
+    );
+    const ranked = [];
+    const seen = /* @__PURE__ */ new Set();
+    const add = (q) => !seen.has(q.slug) && (seen.add(q.slug), ranked.push(q));
+    const perCompany = co.names.map(
+      (name) => eligible.filter((q) => frequencyFor(q, name) >= 0).sort((a, b) => frequencyFor(b, name) - frequencyFor(a, name))
+    );
+    if (co.limit === "share") {
+      let left2 = budget * Math.min(100, Math.max(0, co.share)) / 100 - picked.reduce((t, q) => t + costOf(q), 0);
+      const cursors = perCompany.map(() => 0);
+      let progress = true;
+      while (progress && left2 > 0) {
+        progress = false;
+        perCompany.forEach((list, i) => {
+          while (cursors[i] < list.length && seen.has(list[cursors[i]].slug)) cursors[i]++;
+          const q = list[cursors[i]];
+          if (!q || costOf(q) > left2) return;
+          add(q);
+          left2 -= costOf(q);
+          progress = true;
+        });
+      }
+    } else {
+      const n = Math.max(0, Math.round(co.count));
+      for (const list of perCompany) list.slice(0, n).forEach(add);
+      ranked.sort((a, b) => bestFrequency(b) - bestFrequency(a));
+    }
+    const out = [];
+    let left = budget;
+    for (const q of [...picked, ...ranked]) {
+      if (costOf(q) > left) continue;
+      out.push(q);
+      left -= costOf(q);
+    }
+    return out;
+  }
+  function buildSchedule(pool, settings, ncIndex, slugs = null, companyPool = []) {
+    const { grind: mapped, extra } = withCompanies(
+      pool.map((q) => mapQuestion(q, ncIndex)),
+      companyPool ?? [],
+      ncIndex
+    );
+    const company = selectCompanyQuestions([...mapped, ...extra], settings);
+    const taken = new Set(company.map((q) => q.slug));
     let picked;
     if (slugs) {
       const excluded = new Set(settings.excludedTopics ?? []);
       const bySlug = new Map(mapped.map((q) => [q.slug, q]));
-      picked = slugs.map((s2) => bySlug.get(s2)).filter((q) => q && !excluded.has(q.pattern));
+      picked = slugs.map((s2) => bySlug.get(s2)).filter((q) => q && !excluded.has(q.pattern) && !taken.has(q.slug));
     } else {
-      picked = selectQuestions(mapped, settings);
+      const left = 60 * settings.hours * settings.weeks - company.reduce((t, q) => t + costOf(q), 0);
+      const rest = mapped.filter((q) => !taken.has(q.slug));
+      picked = settings.mode === "all" ? selectQuestions(rest, settings) : selectQuestions(rest, settings, left);
     }
+    picked = [...company, ...picked];
     const ordered = orderQuestions(picked, settings.order, settings);
     const questions = assignWeeks(ordered, settings);
     return {
       questions,
       hours: totalHours(questions),
       fits: totalHours(questions) <= settings.hours * settings.weeks,
-      missing: slugs ? slugs.filter((s2) => !pool.some((q) => q.slug === s2)).length : 0
+      missing: slugs ? slugs.filter((s2) => !pool.some((q) => q.slug === s2)).length : 0,
+      companyCount: questions.filter((q) => q.companies?.length).length
     };
   }
   function groupQuestions(questions, grouping) {
@@ -613,7 +745,7 @@
 
   // src/data/planStore.js
   var POOL_FIELDS = ["slug", "title", "url", "duration", "difficulty", "topic", "priority", "premium"];
-  function createPlan(allGrind, settings, startDate, source) {
+  function createPlan(allGrind, settings, startDate, source, { companyPool = [], companyVersion = null } = {}) {
     return {
       version: 2,
       id: `${Date.now()}`,
@@ -628,9 +760,12 @@
         mode: settings.mode,
         order: settings.order,
         grouping: settings.grouping,
-        excludedTopics: settings.excludedTopics ?? []
+        excludedTopics: settings.excludedTopics ?? [],
+        company: settings.company ?? null
       },
-      pool: allGrind.map((q) => Object.fromEntries(POOL_FIELDS.map((f) => [f, q[f]])))
+      pool: allGrind.map((q) => Object.fromEntries(POOL_FIELDS.map((f) => [f, q[f]]))),
+      companyPool,
+      companyVersion
     };
   }
   var planStore = {
@@ -839,6 +974,18 @@
 .ng-hard { color: var(--ng-hard); }
 .ng-tag { flex: none; font-size: 11px; padding: 2px 6px; border-radius: 6px; background: var(--ng-muted); color: var(--ng-muted-fg); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ng-tag-lc { color: var(--ng-warn); }
+.ng-tag-co { display: inline-flex; align-items: center; gap: 4px; max-width: 140px; color: var(--ng-primary); background: color-mix(in oklab, var(--ng-primary) 14%, transparent); }
+.ng-co-name { overflow: hidden; text-overflow: ellipsis; }
+.ng-co-icon { flex: none; vertical-align: -1px; }
+.ng-co-line { display: flex; flex-direction: column; gap: 2px; }
+.ng-co-update { color: var(--ng-warn); }
+.ng-co-chips { flex-wrap: wrap; gap: 6px; }
+.ng-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: 999px; font-size: 12px; color: var(--ng-fg); background: var(--ng-muted); }
+.ng-chip-x { border: 0; background: none; color: var(--ng-muted-fg); cursor: pointer; font-size: 11px; padding: 2px 4px; }
+.ng-chip-x:hover { color: var(--ng-hard); }
+.ng-pick { cursor: pointer; border-bottom: 1px solid var(--ng-border); }
+.ng-freq { flex: none; width: 36px; height: 4px; border-radius: 2px; background: var(--ng-muted); overflow: hidden; }
+.ng-freq i { display: block; height: 100%; background: var(--ng-primary); }
 
 .ng-drawer {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 1002; width: min(480px, 100vw);
@@ -948,7 +1095,12 @@
       const diffs = s2.difficulty.length === 3 ? "All difficulties" : s2.difficulty.join(", ");
       const topics = s2.topics ? `${s2.topics.length} topics` : "All topics";
       const lines = [h("div", null, `${s2.weeks} weeks \xB7 ${s2.hours} h/week`), h("div", { class: "ng-muted" }, `${diffs} \xB7 ${topics}`)];
-      const excluded = planStore.load()?.settings?.excludedTopics ?? [];
+      const saved = planStore.load();
+      const excluded = saved?.settings?.excludedTopics ?? [];
+      const companies = saved?.settings?.company?.names ?? [];
+      if (companies.length) {
+        lines.push(h("div", { class: "ng-muted ng-small" }, `Companies: ${companies.join(", ")}. Their questions go in first; edit on NeetCode.`));
+      }
       if (excluded.length) {
         lines.push(h("div", { class: "ng-muted ng-small" }, `Skipping on NeetCode: ${excluded.join(", ")}. The count there will differ.`));
       }
@@ -967,11 +1119,15 @@
     }
     function send() {
       const s2 = settings();
-      const excludedTopics = planStore.load()?.settings?.excludedTopics ?? [];
-      planStore.save(createPlan(questions, { ...s2, excludedTopics }, startInput.value || todayUtcISO(), "grind75"));
+      const prev = planStore.load();
+      const excludedTopics = prev?.settings?.excludedTopics ?? [];
+      const company = prev?.settings?.company ?? null;
+      const companyData = { companyPool: prev?.companyPool ?? [], companyVersion: prev?.companyVersion ?? null };
+      planStore.save(createPlan(questions, { ...s2, excludedTopics, company }, startInput.value || todayUtcISO(), "grind75", companyData));
+      const adjusted = excludedTopics.length || company?.names?.length || company?.picked?.length;
       fill(
         status,
-        excludedTopics.length ? "Saved. " : `Saved ${selectQuestions(questions, s2).length} questions. `,
+        adjusted ? "Saved. " : `Saved ${selectQuestions(questions, s2).length} questions. `,
         h("a", { href: "https://neetcode.io/roadmap", target: "_blank", rel: "noopener" }, "Open NeetCode roadmap \u2192")
       );
     }
@@ -996,6 +1152,108 @@
       }
       render();
     })();
+  }
+
+  // src/data/companySource.js
+  var CO_REPO = "liquidslr/leetcode-company-wise-problems";
+  var CO_REPO_URL = `https://github.com/${CO_REPO}`;
+  var API = `https://api.github.com/repos/${CO_REPO}`;
+  var RAW = `https://raw.githubusercontent.com/${CO_REPO}`;
+  var CHECK_EVERY_MS = 24 * 60 * 60 * 1e3;
+  var WINDOWS = {
+    "30d": "1. Thirty Days.csv",
+    "3mo": "2. Three Months.csv",
+    "6mo": "3. Six Months.csv",
+    all: "5. All.csv"
+  };
+  var WINDOW_LABELS = { "30d": "30 days", "3mo": "3 months", "6mo": "6 months", all: "All time" };
+  function parseCsv(text) {
+    const rows = [];
+    let row = [];
+    let field = "";
+    let quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"' && text[i + 1] === '"') field += '"', i++;
+        else if (c === '"') quoted = false;
+        else field += c;
+      } else if (c === '"') quoted = true;
+      else if (c === ",") row.push(field), field = "";
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(field);
+        rows.push(row);
+        row = [];
+        field = "";
+      } else field += c;
+    }
+    if (field || row.length) row.push(field), rows.push(row);
+    return rows.filter((r) => r.some((f) => f.trim()));
+  }
+  var DIFF = { EASY: "Easy", MEDIUM: "Medium", HARD: "Hard" };
+  function slugFromLink(link) {
+    const m = String(link ?? "").match(/\/problems\/([^/?#]+)/);
+    return m ? normalizeSlug(m[1]) : "";
+  }
+  function rowsFromCsv(text) {
+    const [header, ...rows] = parseCsv(text);
+    if (!header) return [];
+    const col = Object.fromEntries(header.map((name, i) => [name.trim().toLowerCase(), i]));
+    const get = (r, name) => col[name] == null ? "" : (r[col[name]] ?? "").trim();
+    const out = [];
+    for (const r of rows) {
+      const slug = slugFromLink(get(r, "link"));
+      const difficulty = DIFF[get(r, "difficulty").toUpperCase()];
+      if (!slug || !difficulty) continue;
+      out.push({
+        slug,
+        title: get(r, "title") || slug,
+        difficulty,
+        frequency: Number(get(r, "frequency")) || 0,
+        lcTopics: get(r, "topics").split(",").map((t) => t.trim()).filter(Boolean)
+      });
+    }
+    return out;
+  }
+  function mergeCompanyRows(listsByCompany) {
+    const bySlug = /* @__PURE__ */ new Map();
+    for (const [company, rows] of Object.entries(listsByCompany)) {
+      for (const r of rows) {
+        let q = bySlug.get(r.slug);
+        if (!q) bySlug.set(r.slug, q = { slug: r.slug, title: r.title, difficulty: r.difficulty, lcTopics: r.lcTopics, tags: [] });
+        if (!q.tags.some((t) => t.company === company)) q.tags.push({ company, frequency: r.frequency });
+      }
+    }
+    const best = (q) => Math.max(...q.tags.map((t) => t.frequency));
+    for (const q of bySlug.values()) q.tags.sort((a, b) => b.frequency - a.frequency);
+    return [...bySlug.values()].sort((a, b) => best(b) - best(a));
+  }
+  async function latestVersion({ force = false } = {}) {
+    const hit = storage.get("co:latest", null);
+    if (!force && hit && Date.now() - hit.checkedAt < CHECK_EVERY_MS) return hit.version;
+    const commit = await fetchJson(`${API}/commits/main`);
+    const version = { sha: commit.sha, date: commit.commit?.committer?.date ?? commit.commit?.author?.date ?? null };
+    storage.set("co:latest", { version, checkedAt: Date.now() });
+    return version;
+  }
+  async function loadCompanyNames(sha) {
+    return cached("co:names", sha, async () => {
+      const tree = await fetchJson(`${API}/git/trees/${sha}`);
+      return tree.tree.filter((e) => e.type === "tree").map((e) => e.path).sort((a, b) => a.localeCompare(b));
+    });
+  }
+  async function loadCompanyList(company, window2, sha) {
+    const file = WINDOWS[window2] ?? WINDOWS["6mo"];
+    const url = `${RAW}/${sha}/${encodeURIComponent(company)}/${encodeURIComponent(file)}`;
+    return cached(`co:list:${company}:${window2}`, sha, async () => rowsFromCsv(await fetchText(url)));
+  }
+  async function buildCompanyPool(names, window2, { force = false } = {}) {
+    if (!names?.length) return { companyPool: [], companyVersion: null };
+    const version = await latestVersion({ force });
+    const lists = {};
+    for (const name of names) lists[name] = await loadCompanyList(name, window2, version.sha);
+    return { companyPool: mergeCompanyRows(lists), companyVersion: version };
   }
 
   // src/data/neetcodeProgress.js
@@ -1172,7 +1430,8 @@
         selected === n.label && "ng-node-selected"
       ].filter(Boolean).join(" ");
       const barY = b.h - PAD - 10;
-      const meta = st.total ? `${st.done}/${st.total}  \xB7  ${weekRange(st.weeks)}` : "not in plan";
+      const company = st.company ? `  \xB7  \u{1F3E2} ${st.company}` : "";
+      const meta = st.total ? `${st.done}/${st.total}  \xB7  ${weekRange(st.weeks)}${company}` : "not in plan";
       return s(
         "g",
         {
@@ -1287,8 +1546,19 @@
       loadError: null,
       selected: null,
       drawer: null,
-      // null | "list" | "replan"
-      graphView: null
+      // null | "list" | "replan" | "companyPick"
+      graphView: null,
+      draft: null,
+      // Re-plan form values, kept while switching to the question picker
+      companyNames: null,
+      companyUpdate: null,
+      // { sha, date } when GitHub has newer company lists than the plan
+      picker: null,
+      // { key, rows, error } company lists for the picker
+      pickerQuery: "",
+      pickerFiltered: true,
+      coWindow: ""
+      // label of the plan's company window, for badge tooltips
     };
     async function loadNc() {
       try {
@@ -1303,16 +1573,58 @@
     function schedule() {
       const plan = planStore.load();
       if (!plan || !state.ncIndex) return null;
-      const built = buildSchedule(plan.pool, plan.settings, state.ncIndex, plan.version >= 2 ? null : plan.slugs);
+      const built = buildSchedule(plan.pool, plan.settings, state.ncIndex, plan.version >= 2 ? null : plan.slugs, plan.companyPool);
       return { ...plan, ...built };
     }
     async function rebuild(patch, startDate) {
       const plan = planStore.load();
       const pool = plan?.version >= 2 ? plan.pool : await loadGrindQuestions();
       const settings = { ...DEFAULT_SETTINGS, ...plan?.settings, ...patch };
-      planStore.save(createPlan(pool, settings, startDate ?? plan?.startDate ?? todayUtcISO(), plan?.source ?? "neetcode"));
+      const co = companySettings(settings);
+      const old = companySettings(plan?.settings);
+      const sameLists = plan?.companyPool && co.window === old.window && co.names.join("\n") === old.names.join("\n");
+      const company = sameLists ? { companyPool: plan.companyPool, companyVersion: plan.companyVersion } : await buildCompanyPool(co.names, co.window);
+      if (!sameLists) state.companyUpdate = null;
+      planStore.save(createPlan(pool, settings, startDate ?? plan?.startDate ?? todayUtcISO(), plan?.source ?? "neetcode", company));
       storage.set("today", null);
       state.graphView = null;
+    }
+    async function checkCompanyUpdate() {
+      const plan = planStore.load();
+      if (!companySettings(plan?.settings).names.length || !plan.companyVersion) return;
+      try {
+        const latest = await latestVersion();
+        state.companyUpdate = latest.sha !== plan.companyVersion.sha ? latest : null;
+        render();
+      } catch (err) {
+        console.warn("[NeetGrind] Company list update check failed:", err);
+      }
+    }
+    async function applyCompanyUpdate(btn) {
+      const plan = planStore.load();
+      const co = companySettings(plan.settings);
+      btn.disabled = true;
+      btn.textContent = "Updating\u2026";
+      try {
+        planStore.update(await buildCompanyPool(co.names, co.window));
+        storage.set("today", null);
+        state.companyUpdate = null;
+      } catch (err) {
+        btn.textContent = `Failed: ${err.message}`;
+        return;
+      }
+      render();
+    }
+    async function loadCompanyNamesOnce() {
+      if (state.companyNames?.length) return;
+      state.companyNames = null;
+      try {
+        state.companyNames = await loadCompanyNames((await latestVersion()).sha);
+      } catch (err) {
+        state.companyNames = [];
+        console.warn("[NeetGrind] Couldn't load company names:", err);
+      }
+      if (state.drawer === "replan") render();
     }
     function todaySlugs(plan, isDone) {
       const day = todayUtcISO();
@@ -1381,6 +1693,7 @@
         return;
       }
       const sched = schedule();
+      state.coWindow = sched ? WINDOW_LABELS[companySettings(sched.settings).window] ?? "" : "";
       const isDone = makeIsDone();
       renderGraph(sched, isDone);
       renderCard(sched, isDone);
@@ -1389,8 +1702,9 @@
     function renderGraph(sched, isDone) {
       const stats = /* @__PURE__ */ new Map();
       for (const q of sched?.questions ?? []) {
-        const st = stats.get(q.pattern) ?? { total: 0, done: 0, weeks: [] };
+        const st = stats.get(q.pattern) ?? { total: 0, done: 0, weeks: [], company: 0 };
         st.total += 1;
+        st.company += q.companies?.length ? 1 : 0;
         st.done += isDone(q) ? 1 : 0;
         if (!st.weeks.includes(q.week)) st.weeks.push(q.week);
         stats.set(q.pattern, st);
@@ -1426,7 +1740,8 @@
         h("span", null, h("i", { class: "ng-swatch ng-swatch-today" }), "Today's topics"),
         h("span", null, h("i", { class: "ng-swatch ng-swatch-complete" }), "Complete"),
         h("span", null, h("i", { class: "ng-swatch ng-swatch-selected" }), "Selected"),
-        h("span", { class: "ng-muted" }, "W2\u20134 = weeks it's scheduled")
+        h("span", { class: "ng-muted" }, "W2\u20134 = weeks it's scheduled"),
+        sched.companyCount ? h("span", { class: "ng-muted" }, "\u{1F3E2} 3 = company-tagged questions") : null
       ) : null;
       fill(ui.graphHost, graph.svg, controls, legend, empty);
       placeCard();
@@ -1450,7 +1765,7 @@
             "div",
             { class: "ng-row" },
             h("a", { class: "ng-btn ng-btn-primary", href: GRIND_PAGE, target: "_blank", rel: "noopener" }, "Open Grind 75"),
-            h("button", { class: "ng-btn", onclick: () => openDrawer("replan") }, "Build here")
+            h("button", { class: "ng-btn", onclick: () => openReplan(null) }, "Build here")
           )
         );
         return;
@@ -1468,7 +1783,7 @@
           "div",
           { class: "ng-card-head" },
           h("div", { class: "ng-card-title" }, "My Plan"),
-          h("button", { class: "ng-btn ng-btn-ghost ng-btn-sm", onclick: () => openDrawer("replan") }, "Re-plan")
+          h("button", { class: "ng-btn ng-btn-ghost ng-btn-sm", onclick: () => openReplan(sched) }, "Re-plan")
         ),
         h(
           "div",
@@ -1501,10 +1816,42 @@
           "div",
           { class: "ng-muted ng-small" },
           `${sched.settings.excludedTopics.length} topic${sched.settings.excludedTopics.length > 1 ? "s" : ""} excluded \xB7 `,
-          h("button", { class: "ng-link", onclick: () => openDrawer("replan") }, "Edit")
+          h("button", { class: "ng-link", onclick: () => openReplan(sched) }, "Edit")
         ) : null,
+        companyLine(sched),
         state.ncSource === "github" ? h("div", { class: "ng-warn-text ng-small" }, "Using GitHub problem data; some links go to LeetCode.") : null
       );
+    }
+    function companyLine(sched) {
+      const co = companySettings(sched.settings);
+      if (!co.names.length && !co.picked.length) return null;
+      const names = co.names.length > 2 ? `${co.names.slice(0, 2).join(", ")} +${co.names.length - 2}` : co.names.join(", ");
+      const update = state.companyUpdate;
+      return h(
+        "div",
+        { class: "ng-co-line ng-small" },
+        h(
+          "div",
+          { class: "ng-muted" },
+          buildingIcon(),
+          ` ${sched.companyCount} company-tagged \xB7 ${names || "picked"} (${WINDOW_LABELS[co.window] ?? co.window})`
+        ),
+        update ? h(
+          "div",
+          { class: "ng-co-update" },
+          `Company lists updated${update.date ? ` (${formatDate(update.date.slice(0, 10))})` : ""} \xB7 `,
+          h("button", { class: "ng-link", onclick: (e) => applyCompanyUpdate(e.currentTarget) }, "Apply")
+        ) : null
+      );
+    }
+    function draftFrom(sched) {
+      const base = { ...DEFAULT_SETTINGS, ...sched?.settings };
+      return structuredClone({ ...base, company: companySettings(base), startDate: sched?.startDate ?? todayUtcISO() });
+    }
+    function openReplan(sched) {
+      state.draft = draftFrom(sched);
+      loadCompanyNamesOnce();
+      openDrawer("replan");
     }
     function openDrawer(view) {
       state.drawer = view;
@@ -1532,8 +1879,28 @@
         h("a", { class: "ng-q-title", href: problemUrl(q), target: "_blank", rel: "noopener" }, q.ncTitle ?? q.title),
         compact ? null : h("span", { class: "ng-muted ng-small" }, `${q.duration}m`),
         tag ? h("span", { class: "ng-tag" }, tag) : null,
+        companyBadge(q),
         q.leetcodeOnly ? h("span", { class: "ng-tag ng-tag-lc", title: "Not on NeetCode; opens LeetCode" }, "LC") : null,
         h("span", { class: `ng-diff ${DIFF_CLASS[q.difficulty]}` }, q.difficulty)
+      );
+    }
+    function buildingIcon() {
+      return s(
+        "svg",
+        { class: "ng-co-icon", viewBox: "0 0 16 16", width: 12, height: 12, "aria-hidden": "true" },
+        s("path", { d: "M2 15V2.5L9 1v14M9 6l5 1.5V15M1 15h14M4.5 4.5h2M4.5 7.5h2M4.5 10.5h2M11 9.5h1M11 12h1", fill: "none", stroke: "currentColor", "stroke-width": 1.4, "stroke-linecap": "round", "stroke-linejoin": "round" })
+      );
+    }
+    function companyBadge(q, span = state.coWindow) {
+      if (!q.companies?.length) return null;
+      const title = q.companies.map((t) => `${t.company} \xB7 frequency ${Math.round(t.frequency)}`).join("\n");
+      return h(
+        "span",
+        { class: "ng-tag ng-tag-co", title: `Company-tagged${span ? ` (${span})` : ""}
+${title}` },
+        buildingIcon(),
+        h("span", { class: "ng-co-name" }, q.companies[0].company),
+        q.companies.length > 1 ? ` +${q.companies.length - 1}` : null
       );
     }
     function renderDrawer(sched, isDone) {
@@ -1541,6 +1908,7 @@
       if (!state.drawer) return fill(ui.drawer);
       const close = h("button", { class: "ng-btn ng-btn-ghost ng-icon-btn", "aria-label": "Close", onclick: closeDrawer }, "\u2715");
       if (state.drawer === "replan") return fill(ui.drawer, replanForm(sched, close));
+      if (state.drawer === "companyPick") return fill(ui.drawer, companyPicker(sched, close));
       if (!sched) return closeDrawer();
       const grouping = sched.settings.grouping ?? "weeks";
       const qs = state.selected ? sched.questions.filter((q) => q.pattern === state.selected) : sched.questions;
@@ -1609,46 +1977,57 @@
       );
     }
     function replanForm(sched, close) {
-      const s2 = sched?.settings ?? DEFAULT_SETTINGS;
-      const weeks = h("input", { class: "ng-input", type: "number", min: 1, max: 26, value: s2.weeks });
-      const hours = h("input", { class: "ng-input", type: "number", min: 1, max: 40, value: s2.hours });
-      const diffs = DIFFICULTIES.map((d) => h("input", { type: "checkbox", value: d, checked: s2.difficulty.includes(d) }));
-      const order = h("select", { class: "ng-input" }, ORDERS.map((o) => h("option", { value: o, selected: o === s2.order }, ORDER_LABELS[o])));
-      const grouping = h("select", { class: "ng-input" }, GROUPINGS.map((g) => h("option", { value: g, selected: g === (s2.grouping ?? "weeks") }, GROUPING_LABELS[g])));
-      const start2 = h("input", { class: "ng-input", type: "date", value: sched?.startDate ?? todayUtcISO() });
-      const excluded = new Set(s2.excludedTopics ?? []);
-      const topicBoxes = TOPO_LABELS.map((t) => h("input", { type: "checkbox", value: t, checked: !excluded.has(t) }));
+      const d = state.draft ??= draftFrom(sched);
+      const co = d.company;
+      const bind = (el, fn) => (el.addEventListener("input", () => fn(el)), el);
+      const weeks = bind(h("input", { class: "ng-input", type: "number", min: 1, max: 26, value: d.weeks }), (el) => d.weeks = el.value);
+      const hours = bind(h("input", { class: "ng-input", type: "number", min: 1, max: 40, value: d.hours }), (el) => d.hours = el.value);
+      const diffs = DIFFICULTIES.map(
+        (v) => h("input", { type: "checkbox", value: v, checked: d.difficulty.includes(v), onchange: () => d.difficulty = diffs.filter((cb) => cb.checked).map((cb) => cb.value) })
+      );
+      const order = h("select", { class: "ng-input", onchange: () => d.order = order.value }, ORDERS.map((o) => h("option", { value: o, selected: o === d.order }, ORDER_LABELS[o])));
+      const grouping = h("select", { class: "ng-input", onchange: () => d.grouping = grouping.value }, GROUPINGS.map((g) => h("option", { value: g, selected: g === (d.grouping ?? "weeks") }, GROUPING_LABELS[g])));
+      const start2 = bind(h("input", { class: "ng-input", type: "date", value: d.startDate }), (el) => d.startDate = el.value);
+      const excluded = new Set(d.excludedTopics ?? []);
+      const topicBoxes = TOPO_LABELS.map(
+        (t) => h("input", { type: "checkbox", value: t, checked: !excluded.has(t), onchange: () => d.excludedTopics = topicBoxes.filter((cb) => !cb.checked).map((cb) => cb.value) })
+      );
+      const setAllTopics = (on) => {
+        topicBoxes.forEach((cb) => cb.checked = on);
+        d.excludedTopics = on ? [] : [...TOPO_LABELS];
+      };
       const status = h("div", { class: "ng-status", role: "status" });
       const submit = h("button", { class: "ng-btn ng-btn-primary", type: "submit" }, sched ? "Rebuild plan" : "Create plan");
       const grindLink = () => {
-        const p = new URLSearchParams({ weeks: weeks.value, hours: hours.value });
-        for (const cb of diffs) if (cb.checked) p.append("difficulty", cb.value);
-        if (["difficulty", "topics", "all_rounded"].includes(order.value)) p.set("order", order.value);
-        p.set("grouping", grouping.value);
+        const p = new URLSearchParams({ weeks: d.weeks, hours: d.hours });
+        for (const v of d.difficulty) p.append("difficulty", v);
+        if (["difficulty", "topics", "all_rounded"].includes(d.order)) p.set("order", d.order);
+        p.set("grouping", d.grouping);
         return `${GRIND_PAGE}?${p}`;
       };
       async function onSubmit(e) {
         e.preventDefault();
-        const difficulty = diffs.filter((cb) => cb.checked).map((cb) => cb.value);
-        if (!difficulty.length) return fill(status, "Pick at least one difficulty.");
-        const excludedTopics = topicBoxes.filter((cb) => !cb.checked).map((cb) => cb.value);
-        if (excludedTopics.length === topicBoxes.length) return fill(status, "Keep at least one topic.");
+        if (!d.difficulty.length) return fill(status, "Pick at least one difficulty.");
+        if ((d.excludedTopics ?? []).length >= TOPO_LABELS.length) return fill(status, "Keep at least one topic.");
+        const { startDate, ...rest } = d;
         const settings = {
-          ...s2,
-          weeks: Math.min(26, Math.max(1, Math.round(+weeks.value || 8))),
-          hours: Math.min(40, Math.max(1, Math.round(+hours.value || 8))),
-          difficulty,
-          order: order.value,
-          grouping: grouping.value,
-          excludedTopics,
-          mode: "preferences"
+          ...rest,
+          weeks: Math.min(26, Math.max(1, Math.round(+d.weeks || 8))),
+          hours: Math.min(40, Math.max(1, Math.round(+d.hours || 8))),
+          mode: "preferences",
+          company: {
+            ...co,
+            count: Math.max(1, Math.round(+co.count || 25)),
+            share: Math.min(100, Math.max(1, Math.round(+co.share || 50)))
+          }
         };
         submit.disabled = true;
-        fill(status, "Building plan\u2026");
+        fill(status, co.names.length ? "Loading company lists\u2026" : "Building plan\u2026");
         try {
-          await rebuild(settings, start2.value || todayUtcISO());
+          await rebuild(settings, startDate || todayUtcISO());
           state.drawer = null;
           state.selected = null;
+          state.draft = null;
           render();
         } catch (err) {
           fill(status, `Failed: ${err.message}`);
@@ -1686,11 +2065,12 @@
           h(
             "div",
             { class: "ng-row" },
-            h("button", { type: "button", class: "ng-link", onclick: () => topicBoxes.forEach((cb) => cb.checked = true) }, "All"),
-            h("button", { type: "button", class: "ng-link", onclick: () => topicBoxes.forEach((cb) => cb.checked = false) }, "None")
+            h("button", { type: "button", class: "ng-link", onclick: () => setAllTopics(true) }, "All"),
+            h("button", { type: "button", class: "ng-link", onclick: () => setAllTopics(false) }, "None")
           )
         ),
-        h("p", { class: "ng-muted ng-small" }, "Uses Grind 75's question selection. Hours from turned-off topics go to other questions. Grind 75's own topic filter is kept."),
+        companyFields(co),
+        h("p", { class: "ng-muted ng-small" }, "Company questions are picked first, then Grind 75 fills the hours left. Hours from turned-off topics go to other questions. Grind 75's own topic filter is kept."),
         h(
           "div",
           { class: "ng-row" },
@@ -1698,6 +2078,182 @@
           h("a", { class: "ng-btn ng-btn-ghost", target: "_blank", rel: "noopener", onclick: (e) => e.currentTarget.href = grindLink(), href: GRIND_PAGE }, "Preview on Grind 75")
         ),
         status
+      );
+    }
+    function companyFields(co) {
+      const names = state.companyNames;
+      const refocus = () => ui.drawer.querySelector(".ng-co-input")?.focus();
+      const addCompany = (value) => {
+        const name = names?.find((n) => n.toLowerCase() === value.trim().toLowerCase());
+        if (!name) return;
+        if (!co.names.includes(name)) co.names.push(name);
+        render();
+        refocus();
+      };
+      const input = h("input", {
+        class: "ng-input ng-co-input",
+        list: "ng-co-names",
+        placeholder: !names ? "Loading companies\u2026" : names.length ? "Add a company\u2026" : "Couldn't load companies",
+        disabled: !names?.length,
+        onchange: (e) => addCompany(e.target.value),
+        onkeydown: (e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          addCompany(e.target.value);
+        }
+      });
+      const windowSelect = h(
+        "select",
+        { class: "ng-input", onchange: (e) => co.window = e.target.value },
+        Object.keys(WINDOWS).map((w) => h("option", { value: w, selected: w === co.window }, WINDOW_LABELS[w]))
+      );
+      const limitSelect = h(
+        "select",
+        { class: "ng-input", onchange: (e) => (co.limit = e.target.value, render()) },
+        Object.entries(COMPANY_LIMITS).map(([v, label]) => h("option", { value: v, selected: v === co.limit }, label))
+      );
+      const share = co.limit === "share";
+      const amount = h("input", {
+        class: "ng-input",
+        type: "number",
+        min: 1,
+        max: share ? 100 : 500,
+        value: share ? co.share : co.count,
+        oninput: (e) => share ? co.share = e.target.value : co.count = e.target.value
+      });
+      return h(
+        "fieldset",
+        { class: "ng-field" },
+        h("legend", null, "Company tags"),
+        h(
+          "div",
+          { class: "ng-row ng-co-chips" },
+          co.names.map(
+            (n) => h(
+              "span",
+              { class: "ng-chip" },
+              n,
+              h("button", { type: "button", class: "ng-chip-x", "aria-label": `Remove ${n}`, onclick: () => (co.names = co.names.filter((x) => x !== n), render()) }, "\u2715")
+            )
+          ),
+          co.names.length ? null : h("span", { class: "ng-muted ng-small" }, "None. Add companies you're interviewing with.")
+        ),
+        input,
+        h("datalist", { id: "ng-co-names" }, (names ?? []).map((n) => h("option", { value: n }))),
+        h(
+          "div",
+          { class: "ng-grid2" },
+          h("label", { class: "ng-field" }, h("span", null, "Asked in the last"), windowSelect),
+          h("label", { class: "ng-field" }, h("span", null, "How many"), limitSelect)
+        ),
+        h("label", { class: "ng-field" }, h("span", null, share ? "% of your hours" : "Questions per company"), amount),
+        h(
+          "div",
+          { class: "ng-row" },
+          h("button", {
+            type: "button",
+            class: "ng-btn",
+            disabled: !co.names.length,
+            onclick: () => (state.drawer = "companyPick", render(), ui.drawer.querySelector(".ng-co-search")?.focus())
+          }, "Choose questions\u2026"),
+          h("span", { class: "ng-muted ng-small" }, co.picked.length ? `${co.picked.length} picked, always included` : "Optional")
+        ),
+        h(
+          "p",
+          { class: "ng-muted ng-small" },
+          "Lists from ",
+          h("a", { href: CO_REPO_URL, target: "_blank", rel: "noopener" }, "leetcode-company-wise-problems"),
+          ", checked daily for updates."
+        )
+      );
+    }
+    function companyPicker(sched, close) {
+      const d = state.draft ??= draftFrom(sched);
+      const co = d.company;
+      const key = `${co.window}|${co.names.join("\n")}`;
+      if (state.picker?.key !== key) {
+        state.picker = { key, rows: null, error: null };
+        buildCompanyPool(co.names, co.window).then(({ companyPool }) => state.picker.key === key && (state.picker.rows = companyPool)).catch((err) => state.picker.key === key && (state.picker.error = err.message)).finally(() => state.drawer === "companyPick" && render());
+      }
+      const back = h("button", { class: "ng-btn ng-btn-ghost", onclick: () => (state.drawer = "replan", render()) }, "\u2190 Back");
+      const head = (sub) => h(
+        "header",
+        { class: "ng-drawer-head" },
+        h("div", null, h("div", { class: "ng-card-title" }, "Choose company questions"), h("div", { class: "ng-muted ng-small" }, sub)),
+        close
+      );
+      const { rows, error } = state.picker;
+      if (!rows) return h("div", { class: "ng-form" }, head(error ? `Failed: ${error}` : "Loading lists\u2026"), back);
+      const grind = (sched?.pool ?? planStore.load()?.pool ?? []).map((q) => mapQuestion(q, state.ncIndex));
+      const tagged = withCompanies(grind, rows, state.ncIndex);
+      const all = [...tagged.grind.filter((q) => q.companies), ...tagged.extra].sort((a, b) => bestFrequency(b) - bestFrequency(a));
+      const picked = new Set(co.picked);
+      const count = h("div", { class: "ng-muted ng-small" });
+      const setCount = () => fill(count, `${picked.size} picked \xB7 ${co.names.join(", ")} \xB7 ${WINDOW_LABELS[co.window]}`);
+      const list = h("div", { class: "ng-groups" });
+      const LIMIT = 200;
+      function renderList() {
+        const query = state.pickerQuery.trim().toLowerCase();
+        const diffs = new Set(d.difficulty);
+        const excluded = new Set(d.excludedTopics ?? []);
+        const shown = all.filter(
+          (q) => (picked.has(q.slug) || !state.pickerFiltered || diffs.has(q.difficulty) && !excluded.has(q.pattern)) && (!query || `${q.ncTitle ?? q.title} ${q.pattern} ${q.slug}`.toLowerCase().includes(query))
+        );
+        fill(
+          list,
+          shown.slice(0, LIMIT).map(
+            (q) => h(
+              "label",
+              { class: "ng-q ng-pick" },
+              h("input", {
+                type: "checkbox",
+                class: "ng-check",
+                checked: picked.has(q.slug),
+                onchange: (e) => {
+                  if (e.target.checked) picked.add(q.slug);
+                  else picked.delete(q.slug);
+                  co.picked = [...picked];
+                  setCount();
+                }
+              }),
+              h("span", { class: "ng-q-title" }, q.ncTitle ?? q.title),
+              h("span", { class: "ng-freq", title: `Frequency ${Math.round(bestFrequency(q))}` }, h("i", { style: { width: `${Math.min(100, bestFrequency(q))}%` } })),
+              h("span", { class: "ng-tag" }, q.pattern),
+              companyBadge(q, WINDOW_LABELS[co.window]),
+              h("span", { class: `ng-diff ${DIFF_CLASS[q.difficulty]}` }, q.difficulty)
+            )
+          ),
+          shown.length > LIMIT ? h("div", { class: "ng-muted ng-small" }, `Showing ${LIMIT} of ${shown.length}. Search to narrow.`) : null,
+          shown.length ? null : h("div", { class: "ng-muted ng-small" }, "No questions match.")
+        );
+      }
+      setCount();
+      renderList();
+      return h(
+        "div",
+        { class: "ng-form" },
+        head(""),
+        count,
+        h("input", {
+          class: "ng-input ng-co-search",
+          type: "search",
+          placeholder: "Search questions or topics\u2026",
+          value: state.pickerQuery,
+          oninput: (e) => (state.pickerQuery = e.target.value, renderList())
+        }),
+        h(
+          "label",
+          { class: "ng-check-label" },
+          h("input", { type: "checkbox", checked: state.pickerFiltered, onchange: (e) => (state.pickerFiltered = e.target.checked, renderList()) }),
+          "Only the plan's difficulties and topics"
+        ),
+        h(
+          "div",
+          { class: "ng-row" },
+          back,
+          h("button", { class: "ng-btn ng-btn-ghost", onclick: () => (co.picked = [], picked.clear(), setCount(), renderList()) }, "Clear picks")
+        ),
+        list
       );
     }
     let lastDay = utcDay(/* @__PURE__ */ new Date());
@@ -1722,6 +2278,7 @@
       if (e.key === "Escape" && state.drawer) closeDrawer();
     });
     loadNc();
+    checkCompanyUpdate();
   }
 
   // src/main.js

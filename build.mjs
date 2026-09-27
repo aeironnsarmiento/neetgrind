@@ -22,6 +22,7 @@ const header = `// ==UserScript==
 // @connect      www.techinterviewhandbook.org
 // @connect      neetcode.io
 // @connect      raw.githubusercontent.com
+// @connect      api.github.com
 // @run-at       document-idle
 // @noframes
 // ==/UserScript==
