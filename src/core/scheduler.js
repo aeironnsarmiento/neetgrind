@@ -2,6 +2,7 @@
 // (techinterviewhandbook.org/grind75, client chunk logic), plus a NeetCode "roadmap" order.
 
 import { mapQuestion } from "./mapping.js";
+import { orderRecommended } from "./recommended.js";
 import { TOPO_LABELS, TOPO_RANK } from "./roadmap.js";
 
 // Grind 75 budgets each question at 1.96x its listed duration.
@@ -27,7 +28,14 @@ export const GRIND_TOPIC_RANK = {
   binary: 21,
   math: 22,
 };
-export const ORDERS = ["difficulty", "topics", "all_rounded", "roadmap"];
+export const ORDERS = ["recommended", "difficulty", "topics", "all_rounded", "roadmap"];
+export const ORDER_LABELS = {
+  recommended: "Recommended (spaced + mixed)",
+  difficulty: "Difficulty (Grind 75 default)",
+  topics: "Topics (Grind 75)",
+  all_rounded: "All rounded (priority)",
+  roadmap: "NeetCode roadmap",
+};
 // Same choices as Grind 75's "Group by". Topics are NeetCode's roadmap topics here.
 export const GROUPINGS = ["weeks", "topics", "difficulty", "none"];
 export const GROUPING_LABELS = { weeks: "Weeks", topics: "Topics", difficulty: "Difficulty", none: "None" };
@@ -36,9 +44,10 @@ export const DEFAULT_SETTINGS = {
   weeks: 8,
   hours: 8,
   difficulty: [...DIFFICULTIES],
-  topics: null, // null = all topics
+  topics: null, // null = all topics (Grind 75 topics)
+  excludedTopics: [], // NeetCode roadmap topics to leave out
   mode: "preferences",
-  order: "difficulty",
+  order: "recommended",
   grouping: "weeks",
 };
 
@@ -68,9 +77,12 @@ export function parseGrindParams(search) {
 }
 
 // Greedy pick in priority order; stops at the first question that overflows the budget
-// (Grind 75 does not skip and continue).
+// (Grind 75 does not skip and continue). `excludedTopics` are NeetCode topics, so they only
+// apply to questions already mapped with a `pattern`; like Grind's own topic filter, excluded
+// questions don't use up budget, so the freed hours go to other questions.
 export function selectQuestions(all, settings) {
-  const byPriority = [...all].sort((a, b) => a.priority - b.priority);
+  const excluded = new Set(settings.excludedTopics ?? []);
+  const byPriority = [...all].sort((a, b) => a.priority - b.priority).filter((q) => !excluded.has(q.pattern));
   if (settings.mode === "all") return byPriority;
   const diffs = new Set(settings.difficulty ?? DIFFICULTIES);
   const topics = settings.topics ? new Set(settings.topics) : null;
@@ -86,7 +98,9 @@ export function selectQuestions(all, settings) {
 }
 
 // Array.prototype.sort is stable, so ties keep priority order, same as Grind 75.
-export function orderQuestions(questions, order) {
+// `recommended` also needs the plan's weeks/hours and marks each question `review: true|false`.
+export function orderQuestions(questions, order, settings = DEFAULT_SETTINGS) {
+  if (order === "recommended") return orderRecommended(questions, settings);
   const cmp = {
     all_rounded: (a, b) => a.priority - b.priority,
     difficulty: (a, b) => DIFFICULTY_RANK[a.difficulty] - DIFFICULTY_RANK[b.difficulty],
@@ -119,24 +133,26 @@ export function totalHours(questions) {
   return Math.ceil(Math.ceil(questions.reduce((sum, q) => sum + costOf(q), 0)) / 60);
 }
 
-// Full pipeline. `slugs` pins the question set chosen when the plan was created,
-// so a Grind 75 dataset update doesn't silently reshuffle an existing plan.
-export function buildSchedule(allGrind, settings, ncIndex, slugs = null) {
+// Full pipeline: map to NeetCode topics, select, order, split into weeks.
+// `pool` is the plan's saved copy of the Grind 75 dataset, so results don't shift when the site
+// updates. `slugs` is only set on older (v1) plans, which pinned the chosen questions.
+export function buildSchedule(pool, settings, ncIndex, slugs = null) {
+  const mapped = pool.map((q) => mapQuestion(q, ncIndex));
   let picked;
   if (slugs) {
-    const bySlug = new Map(allGrind.map((q) => [q.slug, q]));
-    picked = slugs.map((s) => bySlug.get(s)).filter(Boolean);
+    const excluded = new Set(settings.excludedTopics ?? []);
+    const bySlug = new Map(mapped.map((q) => [q.slug, q]));
+    picked = slugs.map((s) => bySlug.get(s)).filter((q) => q && !excluded.has(q.pattern));
   } else {
-    picked = selectQuestions(allGrind, settings);
+    picked = selectQuestions(mapped, settings);
   }
-  const mapped = picked.map((q) => mapQuestion(q, ncIndex));
-  const ordered = orderQuestions(mapped, settings.order);
+  const ordered = orderQuestions(picked, settings.order, settings);
   const questions = assignWeeks(ordered, settings);
   return {
     questions,
     hours: totalHours(questions),
     fits: totalHours(questions) <= settings.hours * settings.weeks,
-    missing: slugs ? slugs.length - picked.length : 0,
+    missing: slugs ? slugs.filter((s) => !pool.some((q) => q.slug === s)).length : 0,
   };
 }
 

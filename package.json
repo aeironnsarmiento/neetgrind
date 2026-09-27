@@ -11,5 +11,11 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.2"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aeironnsarmiento/neetgrind.git"
+  },
+  "homepage": "https://github.com/aeironnsarmiento/neetgrind"
 }

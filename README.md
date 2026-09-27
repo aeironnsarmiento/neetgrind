@@ -1,58 +1,107 @@
-# NeetGrind
+<p align="center">
+  <img src="assets/icon.png" width="112" alt="NeetGrind icon">
+</p>
 
-Build a custom study plan with [Grind 75](https://www.techinterviewhandbook.org/grind75)'s scheduler (weeks × hours/week × difficulty), then work through it on [NeetCode's roadmap](https://neetcode.io/roadmap) graph. Problems link to NeetCode's editor, so solving them counts toward your NeetCode daily streak.
+<h1 align="center">NeetGrind</h1>
 
-Tampermonkey userscript (proof of concept). The core is written to port to a Chrome/Firefox extension later.
+<p align="center">
+  Build a study plan on <a href="https://www.techinterviewhandbook.org/grind75">Grind 75</a>, then follow it on <a href="https://neetcode.io/roadmap">NeetCode's roadmap</a>.
+  <br>
+  A free, open-source userscript. Solving problems in NeetCode's editor keeps your daily streak going.
+</p>
+
+<p align="center">
+  <img src="docs/screenshot.png" width="820" alt="NeetGrind plan on NeetCode's roadmap">
+</p>
+
+## Features
+
+- **Your plan, NeetCode's graph.** Pick weeks, hours and difficulty on Grind 75. The same questions show up on NeetCode's roadmap, with progress for each topic.
+- **Today's questions.** A card above NeetCode's streak calendar shows what to solve today, the week you're in, and whether you're behind.
+- **Research-backed order.** The default order starts each topic on its own, then mixes topics together and spaces out reviews. See [how it works](docs/research.md).
+- **Your choice of topics.** Turn off topics you don't need (e.g. Bit Manipulation), and their hours go to other questions.
+- **Read-only.** NeetGrind reads your NeetCode progress from your browser and never writes to NeetCode.
 
 ## Install
 
-1. Install [Tampermonkey](https://www.tampermonkey.net/). In Chrome, also turn on **Allow User Scripts** for Tampermonkey (chrome://extensions → Tampermonkey → Details).
-2. `npm install && npm run build`
-3. Tampermonkey dashboard → **Utilities** → **Import from file** → `dist/neetgrind.user.js` (or drag the file into the dashboard).
+1. Install [Tampermonkey](https://www.tampermonkey.net/). In Chrome, also turn on **Allow User Scripts** for it (`chrome://extensions` → Tampermonkey → Details).
+2. **[Install NeetGrind](https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/dist/neetgrind.user.js)**. Tampermonkey opens an install page; click **Install**.
+
+Updates install automatically through Tampermonkey.
 
 ## Use
 
-1. On Grind 75, set weeks, hours and difficulty as usual. A **NeetGrind** panel (bottom right) shows the same question count as the page.
-2. Choose a start date (order and grouping default to the page's), then **Send to NeetCode**.
-3. On neetcode.io/roadmap, switch **NeetCode → My Plan** (top left of the graph).
-   - Graph: same 18 topics and edges as NeetCode. Each node shows done/total and which weeks it falls in. The current week's nodes are outlined. Topics with no questions in your plan are hidden, and the edges are joined up around them.
-   - **My Plan** card (above the streak calendar): the current week, pace, today's questions, and **Solve next**.
-   - Click a node or **All questions** to see the list. Group it by **Weeks**, **Topics**, **Difficulty** or **None**, the same choices as Grind 75.
-   - **Re-plan** changes weeks, hours, difficulty, order, grouping or start date without going back to Grind 75.
+1. **Make a plan.** Open [Grind 75](https://www.techinterviewhandbook.org/grind75) and set your weeks, hours and difficulty. Pick a start date in the **NeetGrind** panel (bottom right) and click **Send to NeetCode**.
+2. **Open [neetcode.io/roadmap](https://neetcode.io/roadmap)** and switch **NeetCode → My Plan** (top left).
+3. **Solve.** Click **Solve next**, or click a topic to see its questions. Your progress updates as you solve problems on NeetCode.
 
-### Defaults: same as Grind 75
+You can also change weeks, hours, difficulty, order, grouping or topics any time with **Re-plan** on NeetCode.
 
-- **Based on preferences, order by difficulty, grouped by week**, the same as Grind 75's page, so your weeks on NeetCode hold exactly the questions Grind 75 shows.
-- The panel's **Order** and **Group by** follow the page's dropdowns until you pick something else in the panel.
-- **NeetCode roadmap** order is optional. It keeps the same questions but sorts them along NeetCode's prerequisite graph (Arrays & Hashing → … → Math & Geometry, easiest first within each topic), so each week covers one area of the graph.
-- The graph is always organized by topic, since each node is a topic. Grouping only changes how the question list is organized.
+### Reading the graph
 
-## How it works
+| | Meaning |
+|---|---|
+| Purple outline | Topic in today's questions |
+| Green outline | Topic complete |
+| White outline | Topic you clicked |
+| `2/6 · W1–4` | 2 of 6 done, scheduled in weeks 1–4 |
 
-- **Grind 75 data**: loaded at runtime from the site's own JS chunk. It isn't bundled, because the dataset has no license. The scheduler is a reimplementation of Grind 75's own: a greedy pick in priority order, 1.96 × duration per question, then packing into weeks. Tests check it against the site's counts (8w×8h → 75, 4×8 → 41, 26×40 → 169).
-- **NeetCode data**: the problem list is parsed from neetcode.io's main bundle, with no `eval`. If that fails, it falls back to `neetcode-gh/leetcode`'s `.problemSiteData.json`.
-- **Matching**: joined on LeetCode slug; 154 of 169 match. The other 15 are placed under the closest topic by hand (`src/core/mapping.js`), marked **LC**, and link to LeetCode. You tick those off locally.
-- **Progress**: read-only, from NeetCode's localStorage (`synced-progress-cache` when signed in, `completed-problem-list` when signed out). NeetGrind never writes to NeetCode's servers.
-- **Days** are UTC, like NeetCode's streak. Today's list is fixed for the day once it's computed, so finishing problems doesn't add more.
-- **Storage**: Tampermonkey's `GM_getValue`/`GM_setValue`. This storage is shared across both sites, which is how a plan made on Grind 75 reaches NeetCode.
+Topics with no questions in your plan are hidden.
 
-## Develop
+### Orders
+
+| Order | What you get |
+|---|---|
+| **Recommended** (default) | Each topic starts with 2–3 easy questions, then comes back later as mixed, spaced review. The last week is fully mixed, like an interview. Review questions show "Review" instead of their topic, so you practise spotting the pattern. |
+| Difficulty (Grind 75 default) | Exactly Grind 75's weeks: all Easies, then Mediums, then Hards. |
+| Topics (Grind 75) | Grind 75 grouped by its own topics. |
+| All rounded | Grind 75's priority order. |
+| NeetCode roadmap | One topic at a time, in roadmap order, with no review. |
+
+Every order uses the same questions, chosen by Grind 75. Only when each one comes up changes.
+
+## FAQ
+
+**Does this count toward my NeetCode streak?**
+Solving a problem in NeetCode's editor counts. Every NeetGrind link opens the NeetCode problem page. The 15 Grind 75 questions NeetCode doesn't have are marked **LC**, link to LeetCode, and are ticked off inside NeetGrind.
+
+**Does it change my NeetCode account?**
+No. NeetGrind only reads the progress NeetCode already stores in your browser.
+
+**Where is my plan stored?**
+In Tampermonkey's storage on your machine. That storage is shared between Grind 75 and NeetCode, which is how the plan gets from one to the other.
+
+**It stopped working after a site update.**
+Grind 75 and NeetCode are closed source and change without notice. Please [open an issue](https://github.com/aeironnsarmiento/neetgrind/issues).
+
+## Development
+
+```bash
+npm install
+npm test           # unit tests (tests that need downloaded site data are skipped until you run the next line)
+npm run fixtures   # download the live Grind 75 + NeetCode data for tests
+npm run build      # → dist/neetgrind.user.js
+```
 
 ```
-npm test           # scheduler/mapping/daily tests (fixture tests skip without fixtures)
-npm run fixtures   # download live Grind 75 + NeetCode bundles into test/fixtures/
-npm run build      # dist/neetgrind.user.js
+src/core/      scheduling logic: Grind 75 scheduler, Recommended order, roadmap graph, topic matching, daily targets
+src/data/      site data loaders, saved plan, NeetCode progress reader
+src/platform/  storage + HTTP (swap these to port to a browser extension)
+src/ui/        Grind 75 panel, NeetCode roadmap view, styles
 ```
 
-```
-src/core/      pure logic: scheduler, roadmap graph, slug mapping, daily targets
-src/data/      site data loaders, plan store, NeetCode progress reader
-src/platform/  storage + HTTP (swap for chrome.storage / fetch in an extension)
-src/ui/        Grind 75 panel, NeetCode roadmap toggle, SVG graph, styles
-```
+How it works:
+- Grind 75's question list is read from its site when the script runs. It isn't bundled, because it has no license.
+- Its scheduler is re-implemented and tested against the site's own results.
+- NeetCode's problem list is read from its site.
+- Questions are matched by LeetCode slug: 154 of 169 match. The other 15 are placed by hand.
 
-## Limits
+Pull requests are welcome. Please run `npm test` and `npm run build` and commit `dist/` with your change.
 
-- Both sites are closed source. Their hashed bundles and DOM (`app-graph`, `.right-sidebar`, `.stats-section`) can change without notice. Loaders find data by content signature, not file name, but a big redesign will need selector updates.
-- Streak credit is decided by NeetCode's server. Submitting in NeetCode's editor appears to count; whether ticking the checkbox counts wasn't verified.
-- Grind 75 topic filters carry over from its URL. Re-plan on NeetCode doesn't edit them.
+## Credits
+
+Question selection and time estimates come from [Grind 75](https://www.techinterviewhandbook.org/grind75) by Yangshun Tay. The roadmap graph and problems are from [NeetCode](https://neetcode.io). NeetGrind is not affiliated with either.
+
+## License
+
+[MIT](LICENSE)

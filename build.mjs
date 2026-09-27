@@ -5,7 +5,13 @@ const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), 
 
 const header = `// ==UserScript==
 // @name         NeetGrind: Grind 75 plans on NeetCode's roadmap
-// @namespace    neetgrind
+// @namespace    https://github.com/aeironnsarmiento/neetgrind
+// @homepageURL  https://github.com/aeironnsarmiento/neetgrind
+// @supportURL   https://github.com/aeironnsarmiento/neetgrind/issues
+// @downloadURL  https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/dist/neetgrind.user.js
+// @updateURL    https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/dist/neetgrind.user.js
+// @license      MIT
+// @icon         https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/assets/icon-64.png
 // @version      ${pkg.version}
 // @description  ${pkg.description}
 // @match        https://www.techinterviewhandbook.org/grind75*

@@ -84,14 +84,14 @@ test("pinned slugs survive dataset changes", withFixtures, () => {
   assert.equal(plan.missing, 1);
 });
 
-test("default settings match Grind 75's page defaults", () => {
+test("defaults: Grind 75 selection and weeks, Recommended order", () => {
   assert.equal(DEFAULT_SETTINGS.mode, "preferences");
-  assert.equal(DEFAULT_SETTINGS.order, "difficulty");
+  assert.equal(DEFAULT_SETTINGS.order, "recommended");
   assert.equal(DEFAULT_SETTINGS.grouping, "weeks");
 });
 
 test("difficulty order reproduces Grind 75's week 1", withFixtures, () => {
-  const plan = buildSchedule(grind, settings({ weeks: 4, hours: 8 }), ncIndex);
+  const plan = buildSchedule(grind, settings({ weeks: 4, hours: 8, order: "difficulty" }), ncIndex);
   const week1 = plan.questions.filter((q) => q.week === 1).map((q) => q.slug);
   assert.deepEqual(week1.slice(0, 9), [
     "two-sum", "valid-parentheses", "merge-two-sorted-lists", "best-time-to-buy-and-sell-stock",
@@ -170,3 +170,66 @@ test("visibleGraph rewires edges around hidden topics", () => {
   assert.deepEqual(g.get("Advanced Graphs"), ["Graphs"]);
   assert.ok(!g.has("Heap / Priority Queue"));
 });
+
+test("excluded NeetCode topics are skipped and their hours reused", withFixtures, () => {
+  const excludedTopics = ["Bit Manipulation", "Intervals", "Heap / Priority Queue"];
+  const base = buildSchedule(grind, settings(), ncIndex);
+  const plan = buildSchedule(grind, settings({ excludedTopics }), ncIndex);
+  assert.ok(base.questions.some((q) => excludedTopics.includes(q.pattern)));
+  assert.ok(plan.questions.every((q) => !excludedTopics.includes(q.pattern)));
+  // Freed budget goes to lower-priority questions, so the plan isn't simply smaller.
+  assert.ok(plan.questions.some((q) => !base.questions.some((b) => b.slug === q.slug)));
+  const budget = 60 * 8 * 8;
+  assert.ok(plan.questions.reduce((t, q) => t + 1.96 * q.duration, 0) <= budget);
+});
+
+for (const [weeks, hours] of [[4, 8], [8, 8], [12, 10]]) {
+  test(`recommended order (${weeks}w x ${hours}h): intro, spaced review, mixed finish`, withFixtures, () => {
+    const s = settings({ weeks, hours });
+    const rec = buildSchedule(grind, s, ncIndex).questions;
+    const diff = buildSchedule(grind, settings({ weeks, hours, order: "difficulty" }), ncIndex).questions;
+    // Same questions as Grind 75, just reordered.
+    assert.deepEqual(rec.map((q) => q.slug).sort(), diff.map((q) => q.slug).sort());
+
+    // Topics are introduced in roadmap order, and never reviewed before their intro.
+    const firstSeen = [];
+    for (const q of rec) if (!firstSeen.includes(q.pattern)) firstSeen.push(q.pattern);
+    assert.deepEqual(firstSeen, [...firstSeen].sort((a, b) => TOPO_RANK[a] - TOPO_RANK[b]));
+    for (const q of rec.filter((x) => !x.review)) {
+      const firstReview = rec.findIndex((x) => x.review && x.pattern === q.pattern);
+      if (firstReview >= 0) assert.ok(rec.indexOf(q) < firstReview, `${q.pattern} reviewed before intro`);
+    }
+
+    // Intros skip Hards when the topic has anything easier.
+    for (const t of new Set(rec.map((q) => q.pattern))) {
+      const ofTopic = rec.filter((q) => q.pattern === t);
+      if (ofTopic.some((q) => q.difficulty !== "Hard")) {
+        assert.ok(ofTopic.filter((q) => !q.review).every((q) => q.difficulty !== "Hard"), `${t} intro has a Hard`);
+      }
+    }
+
+    // A topic's Hard review only comes after an earlier review of that topic
+    // (unless every review question left for that topic is Hard).
+    rec.forEach((q, i) => {
+      const onlyHards = rec.filter((x) => x.review && x.pattern === q.pattern).every((x) => x.difficulty === "Hard");
+      if (q.review && q.difficulty === "Hard" && !onlyHards) {
+        assert.ok(rec.slice(0, i).some((x) => x.review && x.pattern === q.pattern), `${q.slug} Hard before first review`);
+      }
+    });
+
+    // Week 1 is new material only; the last week is review only; weeks in between mix both.
+    const week = (w) => rec.filter((q) => q.week === w);
+    assert.ok(week(1).every((q) => !q.review));
+    assert.ok(week(weeks).length && week(weeks).every((q) => q.review));
+    for (let w = 2; w < weeks; w++) if (week(w).length) assert.ok(week(w).some((q) => q.review), `week ${w} has no review`);
+
+    // No more than 2 of the same topic in a row among reviews.
+    for (let i = 2; i < rec.length; i++) {
+      const [a, b, c] = rec.slice(i - 2, i + 1);
+      if (a.review && b.review && c.review && a.pattern === b.pattern && b.pattern === c.pattern) {
+        const left = rec.slice(i).some((q) => q.pattern !== c.pattern);
+        assert.ok(!left, `3 ${c.pattern} reviews in a row at ${i}`);
+      }
+    }
+  });
+}

@@ -3,7 +3,8 @@
 
 import { dailyTarget, paceSummary, todayUtcISO, utcDay } from "../core/daily.js";
 import { indexNeetcode, problemUrl } from "../core/mapping.js";
-import { buildSchedule, DEFAULT_SETTINGS, DIFFICULTIES, groupQuestions, GROUPING_LABELS, GROUPINGS, ORDERS, totalHours } from "../core/scheduler.js";
+import { TOPO_LABELS } from "../core/roadmap.js";
+import { buildSchedule, DEFAULT_SETTINGS, DIFFICULTIES, groupQuestions, GROUPING_LABELS, GROUPINGS, ORDER_LABELS, ORDERS, totalHours } from "../core/scheduler.js";
 import { GRIND_PAGE, loadGrindQuestions } from "../data/grindSource.js";
 import { lcDone, makeIsDone } from "../data/neetcodeProgress.js";
 import { loadNeetcodeProblems } from "../data/neetcodeSource.js";
@@ -13,7 +14,6 @@ import { DIFF_CLASS, fill, formatDate, h, injectStyle } from "./dom.js";
 import { renderPlanGraph } from "./planGraph.js";
 import css from "./styles.css";
 
-const ORDER_LABELS = { difficulty: "Difficulty (Grind 75 default)", topics: "Topics", all_rounded: "All rounded (priority)", roadmap: "NeetCode roadmap" };
 
 export function initRoadmapPage() {
   injectStyle("neetgrind-style", css);
@@ -43,8 +43,18 @@ export function initRoadmapPage() {
   function schedule() {
     const plan = planStore.load();
     if (!plan || !state.ncIndex) return null;
-    const built = buildSchedule(plan.pool, plan.settings, state.ncIndex, plan.slugs);
+    const built = buildSchedule(plan.pool, plan.settings, state.ncIndex, plan.version >= 2 ? null : plan.slugs);
     return { ...plan, ...built };
+  }
+
+  // New plan from new settings. v2 plans carry the whole Grind 75 dataset, so no refetch.
+  async function rebuild(patch, startDate) {
+    const plan = planStore.load();
+    const pool = plan?.version >= 2 ? plan.pool : await loadGrindQuestions();
+    const settings = { ...DEFAULT_SETTINGS, ...plan?.settings, ...patch };
+    planStore.save(createPlan(pool, settings, startDate ?? plan?.startDate ?? todayUtcISO(), plan?.source ?? "neetcode"));
+    storage.set("today", null);
+    state.graphView = null;
   }
 
   function todaySlugs(plan, isDone) {
@@ -138,10 +148,11 @@ export function initRoadmapPage() {
       if (!st.weeks.includes(q.week)) st.weeks.push(q.week);
       stats.set(q.pattern, st);
     }
-    const currentWeek = sched ? paceSummary(sched, isDone).pos.week : 0;
+    const bySlug = new Map((sched?.questions ?? []).map((q) => [q.slug, q]));
+    const todayTopics = new Set(sched ? todaySlugs(sched, isDone).map((s) => bySlug.get(s)?.pattern) : []);
     const graph = renderPlanGraph({
       stats,
-      currentWeek,
+      focus: todayTopics,
       selected: state.selected,
       onSelect: (label) => {
         state.selected = label;
@@ -165,7 +176,15 @@ export function initRoadmapPage() {
     const empty = !sched
       ? h("div", { class: "ng-graph-empty" }, state.loadError ?? (state.ncIndex ? "No plan yet. Create one from the card on the right." : "Loading NeetCode problems…"))
       : null;
-    fill(ui.graphHost, graph.svg, controls, empty ?? "");
+    const legend = sched
+      ? h("div", { class: "ng-legend", "aria-label": "Legend" },
+          h("span", null, h("i", { class: "ng-swatch ng-swatch-today" }), "Today's topics"),
+          h("span", null, h("i", { class: "ng-swatch ng-swatch-complete" }), "Complete"),
+          h("span", null, h("i", { class: "ng-swatch ng-swatch-selected" }), "Selected"),
+          h("span", { class: "ng-muted" }, "W2–4 = weeks it's scheduled"),
+        )
+      : null;
+    fill(ui.graphHost, graph.svg, controls, legend, empty);
     placeCard();
   }
 
@@ -229,6 +248,12 @@ export function initRoadmapPage() {
         next ? h("a", { class: "ng-btn ng-btn-primary", href: problemUrl(next), target: "_blank", rel: "noopener" }, "Solve next") : null,
         h("button", { class: "ng-btn", onclick: () => { state.selected = null; openDrawer("list"); } }, "All questions"),
       ),
+      sched.settings.excludedTopics?.length
+        ? h("div", { class: "ng-muted ng-small" },
+            `${sched.settings.excludedTopics.length} topic${sched.settings.excludedTopics.length > 1 ? "s" : ""} excluded · `,
+            h("button", { class: "ng-link", onclick: () => openDrawer("replan") }, "Edit"),
+          )
+        : null,
       state.ncSource === "github" ? h("div", { class: "ng-warn-text ng-small" }, "Using GitHub problem data; some links go to LeetCode.") : null,
     );
   }
@@ -280,10 +305,12 @@ export function initRoadmapPage() {
     const current = paceSummary(sched, isDone).pos.week;
     const groups = groupQuestions(qs, grouping);
     // Tag each row with whatever the grouping and topic filter don't already show.
+    // Review questions (Recommended order) hide their topic so you have to spot the pattern.
+    // Topic grouping or a clicked topic already reveals it, so only the week is shown there.
     const tagFor = (q) => {
-      if (grouping === "weeks") return state.selected ? null : q.pattern;
-      if (grouping === "topics" || state.selected) return `W${q.week}`;
-      return `${q.pattern} · W${q.week}`;
+      if (grouping === "topics" || state.selected) return grouping === "weeks" ? null : `W${q.week}`;
+      const topic = q.review ? "Review" : q.pattern;
+      return grouping === "weeks" ? topic : `${topic} · W${q.week}`;
     };
     const setGrouping = (g) => {
       planStore.update({ settings: { ...sched.settings, grouping: g } });
@@ -305,6 +332,18 @@ export function initRoadmapPage() {
           ),
         ),
         state.selected ? h("button", { class: "ng-btn ng-btn-ghost", onclick: () => { state.selected = null; render(); } }, "Show all topics") : null,
+        state.selected
+          ? h("button", {
+              class: "ng-btn ng-btn-ghost ng-danger",
+              title: "Leave this topic out. Its hours go to other questions; turn it back on in Re-plan.",
+              onclick: async () => {
+                await rebuild({ excludedTopics: [...(sched.settings.excludedTopics ?? []), state.selected] });
+                state.selected = null;
+                state.drawer = null;
+                render();
+              },
+            }, "Remove topic from plan")
+          : null,
       ),
       h("div", { class: "ng-groups" },
         groups.map(({ name, questions: list }) =>
@@ -325,13 +364,15 @@ export function initRoadmapPage() {
     const order = h("select", { class: "ng-input" }, ORDERS.map((o) => h("option", { value: o, selected: o === s.order }, ORDER_LABELS[o])));
     const grouping = h("select", { class: "ng-input" }, GROUPINGS.map((g) => h("option", { value: g, selected: g === (s.grouping ?? "weeks") }, GROUPING_LABELS[g])));
     const start = h("input", { class: "ng-input", type: "date", value: sched?.startDate ?? todayUtcISO() });
+    const excluded = new Set(s.excludedTopics ?? []);
+    const topicBoxes = TOPO_LABELS.map((t) => h("input", { type: "checkbox", value: t, checked: !excluded.has(t) }));
     const status = h("div", { class: "ng-status", role: "status" });
     const submit = h("button", { class: "ng-btn ng-btn-primary", type: "submit" }, sched ? "Rebuild plan" : "Create plan");
 
     const grindLink = () => {
       const p = new URLSearchParams({ weeks: weeks.value, hours: hours.value });
       for (const cb of diffs) if (cb.checked) p.append("difficulty", cb.value);
-      if (order.value !== "roadmap") p.set("order", order.value);
+      if (["difficulty", "topics", "all_rounded"].includes(order.value)) p.set("order", order.value);
       p.set("grouping", grouping.value);
       return `${GRIND_PAGE}?${p}`;
     };
@@ -340,6 +381,8 @@ export function initRoadmapPage() {
       e.preventDefault();
       const difficulty = diffs.filter((cb) => cb.checked).map((cb) => cb.value);
       if (!difficulty.length) return fill(status, "Pick at least one difficulty.");
+      const excludedTopics = topicBoxes.filter((cb) => !cb.checked).map((cb) => cb.value);
+      if (excludedTopics.length === topicBoxes.length) return fill(status, "Keep at least one topic.");
       const settings = {
         ...s,
         weeks: Math.min(26, Math.max(1, Math.round(+weeks.value || 8))),
@@ -347,23 +390,15 @@ export function initRoadmapPage() {
         difficulty,
         order: order.value,
         grouping: grouping.value,
+        excludedTopics,
         mode: "preferences",
       };
       submit.disabled = true;
-      fill(status, "Loading Grind 75 questions…");
+      fill(status, "Building plan…");
       try {
-        // Only order/start changed: keep the same questions.
-        const sameSet = sched && settings.weeks === s.weeks && settings.hours === s.hours && difficulty.join() === s.difficulty.join();
-        if (sameSet) {
-          planStore.update({ settings, startDate: start.value || todayUtcISO() });
-        } else {
-          const all = await loadGrindQuestions();
-          planStore.save(createPlan(all, settings, start.value || todayUtcISO(), "neetcode"));
-        }
-        storage.set("today", null);
+        await rebuild(settings, start.value || todayUtcISO());
         state.drawer = null;
         state.selected = null;
-        state.graphView = null;
         render();
       } catch (err) {
         fill(status, `Failed: ${err.message}`);
@@ -388,7 +423,15 @@ export function initRoadmapPage() {
         h("label", { class: "ng-field" }, h("span", null, "Group by"), grouping),
       ),
       h("label", { class: "ng-field" }, h("span", null, "Start date (UTC)"), start),
-      h("p", { class: "ng-muted ng-small" }, "Uses Grind 75's question selection. Topic filters from Grind 75 are kept."),
+      h("fieldset", { class: "ng-field" },
+        h("legend", null, "NeetCode topics"),
+        h("div", { class: "ng-topic-grid" }, topicBoxes.map((cb) => h("label", { class: "ng-check-label" }, cb, cb.value))),
+        h("div", { class: "ng-row" },
+          h("button", { type: "button", class: "ng-link", onclick: () => topicBoxes.forEach((cb) => (cb.checked = true)) }, "All"),
+          h("button", { type: "button", class: "ng-link", onclick: () => topicBoxes.forEach((cb) => (cb.checked = false)) }, "None"),
+        ),
+      ),
+      h("p", { class: "ng-muted ng-small" }, "Uses Grind 75's question selection. Hours from turned-off topics go to other questions. Grind 75's own topic filter is kept."),
       h("div", { class: "ng-row" },
         submit,
         h("a", { class: "ng-btn ng-btn-ghost", target: "_blank", rel: "noopener", onclick: (e) => (e.currentTarget.href = grindLink()), href: GRIND_PAGE }, "Preview on Grind 75"),

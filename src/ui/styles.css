@@ -111,7 +111,7 @@
 .ng-node-fill { fill: var(--ng-done); }
 .ng-node-empty { cursor: default; opacity: 0.35; }
 .ng-node-empty .ng-node-track, .ng-node-empty .ng-node-fill { display: none; }
-.ng-node-current .ng-node-card { stroke: var(--ng-primary); stroke-width: 5; }
+.ng-node-today .ng-node-card { stroke: var(--ng-primary); stroke-width: 5; }
 .ng-node-complete .ng-node-card { stroke: var(--ng-done); stroke-width: 4; }
 .ng-node-selected .ng-node-card { stroke: var(--ng-fg); stroke-width: 5; }
 
@@ -172,6 +172,20 @@
   .ng-drawer, .ng-edge, .ng-node-card, .ng-group summary::before { transition: none; }
 }
 .ng-btn-sm { min-height: 26px; padding: 0 8px; font-size: 12px; color: var(--ng-muted-fg); }
+
+.ng-legend {
+  position: absolute; top: 64px; left: 12px; display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 10px; border-radius: 10px; background: color-mix(in oklab, var(--ng-card) 85%, transparent);
+  border: 1px solid var(--ng-border); font-size: 12px; pointer-events: none;
+}
+.ng-legend span { display: flex; align-items: center; gap: 8px; }
+.ng-swatch { display: inline-block; width: 16px; height: 11px; border-radius: 3px; background: var(--ng-node); border: 2px solid transparent; }
+.ng-swatch-today { border-color: var(--ng-primary); }
+.ng-swatch-complete { border-color: var(--ng-done); }
+.ng-swatch-selected { border-color: var(--ng-fg); }
+.ng-link { border: 0; padding: 0; background: none; color: var(--ng-primary); font: inherit; cursor: pointer; text-decoration: underline; }
+.ng-danger { color: var(--ng-hard); }
+.ng-topic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
 
 @media (max-width: 768px) {
   .ng-graph-host .ng-plan-card { top: auto; left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 45%; overflow-y: auto; }

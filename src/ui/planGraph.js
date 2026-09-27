@@ -27,7 +27,8 @@ function weekRange(weeks) {
 
 // stats: Map<label, { total, done, weeks: number[] }>
 // Topics with no plan questions are left out; with no plan at all, every topic is shown.
-export function renderPlanGraph({ stats, currentWeek, selected, onSelect }) {
+// focus: labels to outline (today's topics).
+export function renderPlanGraph({ stats, focus = new Set(), selected, onSelect }) {
   const inPlan = NC_NODES.map((n) => n.label).filter((label) => stats.get(label)?.total);
   const graph = visibleGraph(inPlan.length ? inPlan : NC_NODES.map((n) => n.label));
   const boxes = new Map(
@@ -74,7 +75,7 @@ export function renderPlanGraph({ stats, currentWeek, selected, onSelect }) {
       "ng-node",
       st.total === 0 && "ng-node-empty",
       st.total > 0 && st.done === st.total && "ng-node-complete",
-      st.weeks.includes(currentWeek) && "ng-node-current",
+      focus.has(n.label) && "ng-node-today",
       selected === n.label && "ng-node-selected",
     ]
       .filter(Boolean)

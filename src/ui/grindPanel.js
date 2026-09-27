@@ -1,19 +1,14 @@
 // Floating "Send to NeetCode" panel on the Grind 75 page.
 
 import { todayUtcISO } from "../core/daily.js";
-import { GROUPING_LABELS, parseGrindParams, selectQuestions, totalHours } from "../core/scheduler.js";
+import { GROUPING_LABELS, ORDER_LABELS, parseGrindParams, selectQuestions, totalHours } from "../core/scheduler.js";
 import { chunkUrlsFromDocument, loadGrindQuestions } from "../data/grindSource.js";
 import { createPlan, planStore } from "../data/planStore.js";
 import { storage } from "../platform/storage.js";
 import { fill, h, injectStyle } from "./dom.js";
 import css from "./styles.css";
 
-const ORDER_LABELS = {
-  difficulty: "Difficulty",
-  topics: "Topics",
-  all_rounded: "All rounded (priority)",
-  roadmap: "NeetCode roadmap",
-};
+
 
 export function initGrindPanel() {
   injectStyle("neetgrind-style", css);
@@ -72,7 +67,9 @@ export function initGrindPanel() {
 
   function render() {
     const page = parseGrindParams(location.search);
-    if (!orderPicked && page.grindOrder in ORDER_LABELS) orderSelect.value = page.grindOrder;
+    // Default to Recommended; follow the page only when its "Order by" was changed (it's in the URL).
+    const explicitOrder = new URLSearchParams(location.search).get("order");
+    if (!orderPicked) orderSelect.value = explicitOrder in ORDER_LABELS ? explicitOrder : "recommended";
     if (!groupingPicked) groupingSelect.value = page.grouping;
     panel.classList.toggle("ng-collapsed", collapsed);
     toggleBtn.textContent = collapsed ? "+" : "–";
@@ -81,6 +78,10 @@ export function initGrindPanel() {
     const diffs = s.difficulty.length === 3 ? "All difficulties" : s.difficulty.join(", ");
     const topics = s.topics ? `${s.topics.length} topics` : "All topics";
     const lines = [h("div", null, `${s.weeks} weeks · ${s.hours} h/week`), h("div", { class: "ng-muted" }, `${diffs} · ${topics}`)];
+    const excluded = planStore.load()?.settings?.excludedTopics ?? [];
+    if (excluded.length) {
+      lines.push(h("div", { class: "ng-muted ng-small" }, `Skipping on NeetCode: ${excluded.join(", ")}. The count there will differ.`));
+    }
     if (loadError) lines.push(h("div", { class: "ng-error" }, loadError));
     else if (!questions) lines.push(h("div", { class: "ng-muted" }, "Loading questions…"));
     else {
@@ -97,10 +98,11 @@ export function initGrindPanel() {
 
   function send() {
     const s = settings();
-    const plan = createPlan(questions, s, startInput.value || todayUtcISO(), "grind75");
-    planStore.save(plan);
-    fill(status, 
-      `Saved ${plan.slugs.length} questions. `,
+    // Topic exclusions are made on NeetCode; keep them when a new plan is sent from here.
+    const excludedTopics = planStore.load()?.settings?.excludedTopics ?? [];
+    planStore.save(createPlan(questions, { ...s, excludedTopics }, startInput.value || todayUtcISO(), "grind75"));
+    fill(status,
+      excludedTopics.length ? "Saved. " : `Saved ${selectQuestions(questions, s).length} questions. `,
       h("a", { href: "https://neetcode.io/roadmap", target: "_blank", rel: "noopener" }, "Open NeetCode roadmap →"),
     );
   }
