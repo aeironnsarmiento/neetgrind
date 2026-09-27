@@ -1556,7 +1556,9 @@
       picker: null,
       // { key, rows, error } company lists for the picker
       pickerQuery: "",
-      pickerFiltered: true
+      pickerFiltered: true,
+      coWindow: ""
+      // label of the plan's company window, for badge tooltips
     };
     async function loadNc() {
       try {
@@ -1614,7 +1616,8 @@
       render();
     }
     async function loadCompanyNamesOnce() {
-      if (state.companyNames) return;
+      if (state.companyNames?.length) return;
+      state.companyNames = null;
       try {
         state.companyNames = await loadCompanyNames((await latestVersion()).sha);
       } catch (err) {
@@ -1690,6 +1693,7 @@
         return;
       }
       const sched = schedule();
+      state.coWindow = sched ? WINDOW_LABELS[companySettings(sched.settings).window] ?? "" : "";
       const isDone = makeIsDone();
       renderGraph(sched, isDone);
       renderCard(sched, isDone);
@@ -1887,9 +1891,8 @@
         s("path", { d: "M2 15V2.5L9 1v14M9 6l5 1.5V15M1 15h14M4.5 4.5h2M4.5 7.5h2M4.5 10.5h2M11 9.5h1M11 12h1", fill: "none", stroke: "currentColor", "stroke-width": 1.4, "stroke-linecap": "round", "stroke-linejoin": "round" })
       );
     }
-    function companyBadge(q) {
+    function companyBadge(q, span = state.coWindow) {
       if (!q.companies?.length) return null;
-      const span = WINDOW_LABELS[companySettings(planStore.load()?.settings).window] ?? "";
       const title = q.companies.map((t) => `${t.company} \xB7 frequency ${Math.round(t.frequency)}`).join("\n");
       return h(
         "span",
@@ -2216,7 +2219,7 @@ ${title}` },
               h("span", { class: "ng-q-title" }, q.ncTitle ?? q.title),
               h("span", { class: "ng-freq", title: `Frequency ${Math.round(bestFrequency(q))}` }, h("i", { style: { width: `${Math.min(100, bestFrequency(q))}%` } })),
               h("span", { class: "ng-tag" }, q.pattern),
-              companyBadge(q),
+              companyBadge(q, WINDOW_LABELS[co.window]),
               h("span", { class: `ng-diff ${DIFF_CLASS[q.difficulty]}` }, q.difficulty)
             )
           ),

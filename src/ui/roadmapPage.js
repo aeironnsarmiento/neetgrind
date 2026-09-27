@@ -33,6 +33,7 @@ export function initRoadmapPage() {
     picker: null, // { key, rows, error } company lists for the picker
     pickerQuery: "",
     pickerFiltered: true,
+    coWindow: "", // label of the plan's company window, for badge tooltips
   };
 
   // --- data -------------------------------------------------------------------------------
@@ -102,8 +103,10 @@ export function initRoadmapPage() {
     render();
   }
 
+  // An empty list means the last attempt failed; opening Re-plan again retries.
   async function loadCompanyNamesOnce() {
-    if (state.companyNames) return;
+    if (state.companyNames?.length) return;
+    state.companyNames = null;
     try {
       state.companyNames = await loadCompanyNames((await latestVersion()).sha);
     } catch (err) {
@@ -189,6 +192,7 @@ export function initRoadmapPage() {
       return;
     }
     const sched = schedule();
+    state.coWindow = sched ? (WINDOW_LABELS[companySettings(sched.settings).window] ?? "") : "";
     const isDone = makeIsDone();
     renderGraph(sched, isDone);
     renderCard(sched, isDone);
@@ -389,9 +393,8 @@ export function initRoadmapPage() {
   }
 
   // "🏢 Google +2", with every company and its frequency in the tooltip.
-  function companyBadge(q) {
+  function companyBadge(q, span = state.coWindow) {
     if (!q.companies?.length) return null;
-    const span = WINDOW_LABELS[companySettings(planStore.load()?.settings).window] ?? "";
     const title = q.companies.map((t) => `${t.company} · frequency ${Math.round(t.frequency)}`).join("\n");
     return h("span", { class: "ng-tag ng-tag-co", title: `Company-tagged${span ? ` (${span})` : ""}\n${title}` },
       buildingIcon(),
@@ -686,7 +689,7 @@ export function initRoadmapPage() {
             h("span", { class: "ng-q-title" }, q.ncTitle ?? q.title),
             h("span", { class: "ng-freq", title: `Frequency ${Math.round(bestFrequency(q))}` }, h("i", { style: { width: `${Math.min(100, bestFrequency(q))}%` } })),
             h("span", { class: "ng-tag" }, q.pattern),
-            companyBadge(q),
+            companyBadge(q, WINDOW_LABELS[co.window]),
             h("span", { class: `ng-diff ${DIFF_CLASS[q.difficulty]}` }, q.difficulty),
           ),
         ),
