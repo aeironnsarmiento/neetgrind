@@ -1,0 +1,142 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { extractGrindQuestions } from "../src/data/grindSource.js";
+import { extractNeetcodeProblems } from "../src/data/neetcodeSource.js";
+import { indexNeetcode, mapQuestion, UNMATCHED_OVERRIDES } from "../src/core/mapping.js";
+import { NC_NODES, TOPO_LABELS, TOPO_RANK, ancestorsOf } from "../src/core/roadmap.js";
+import { assignWeeks, buildSchedule, orderQuestions, parseGrindParams, selectQuestions, DEFAULT_SETTINGS } from "../src/core/scheduler.js";
+import { dailyTarget, planPosition, paceSummary } from "../src/core/daily.js";
+
+// Fixtures are the live bundles (not committed). Download them with `npm run fixtures`.
+const fx = (name) => new URL(`./fixtures/${name}`, import.meta.url);
+const haveFixtures = existsSync(fx("grind-data.js")) && existsSync(fx("nc-main.js"));
+const grind = haveFixtures ? extractGrindQuestions(readFileSync(fx("grind-data.js"), "utf8")) : [];
+const nc = haveFixtures ? extractNeetcodeProblems(readFileSync(fx("nc-main.js"), "utf8")) : [];
+const ncIndex = indexNeetcode(nc);
+const withFixtures = { skip: !haveFixtures && "fixtures missing (npm run fixtures)" };
+
+const settings = (over = {}) => ({ ...DEFAULT_SETTINGS, ...over });
+
+test("extracts the Grind 75 dataset", withFixtures, () => {
+  assert.equal(grind.length, 169);
+  assert.deepEqual(grind[0].slug, "two-sum");
+});
+
+test("extracts NeetCode problems from main bundle", withFixtures, () => {
+  assert.ok(nc.length >= 900, `got ${nc.length}`);
+  const cd = nc.find((p) => p.link === "contains-duplicate/");
+  assert.equal(cd.pattern, "Arrays & Hashing");
+  assert.equal(cd.ncLink, "duplicate-integer/");
+  assert.equal(cd.neetcode150, true);
+});
+
+test("selection matches Grind 75 counts", withFixtures, () => {
+  assert.equal(selectQuestions(grind, settings({ weeks: 8, hours: 8 })).length, 75);
+  assert.equal(selectQuestions(grind, settings({ weeks: 4, hours: 8 })).length, 41);
+  assert.equal(selectQuestions(grind, settings({ weeks: 26, hours: 40 })).length, 169);
+  assert.equal(selectQuestions(grind, settings({ mode: "all", weeks: 1, hours: 1 })).length, 169);
+});
+
+test("difficulty and topic filters apply before the budget", withFixtures, () => {
+  const easy = selectQuestions(grind, settings({ weeks: 26, hours: 40, difficulty: ["Easy"] }));
+  assert.ok(easy.length > 0 && easy.every((q) => q.difficulty === "Easy"));
+  const trees = selectQuestions(grind, settings({ weeks: 26, hours: 40, topics: ["binary-tree"] }));
+  assert.ok(trees.every((q) => q.topic === "binary-tree"));
+});
+
+test("week packing follows Grind 75 (overflow lands in last week)", () => {
+  const qs = Array.from({ length: 10 }, (_, i) => ({ slug: `q${i}`, duration: 30 })); // 58.8 min each
+  const packed = assignWeeks(qs, { weeks: 3, hours: 2 }); // 120 min/week -> 2 per week
+  assert.deepEqual(packed.map((q) => q.week), [1, 1, 2, 2, 3, 3, 3, 3, 3, 3]);
+});
+
+test("slug join: 154 matched, 15 overrides", withFixtures, () => {
+  const mapped = grind.map((q) => mapQuestion(q, ncIndex));
+  const matched = mapped.filter((q) => !q.leetcodeOnly);
+  assert.equal(matched.length, 154);
+  const unmatched = mapped.filter((q) => q.leetcodeOnly).map((q) => q.slug).sort();
+  assert.deepEqual(unmatched, Object.keys(UNMATCHED_OVERRIDES).sort());
+  const labels = new Set(NC_NODES.map((n) => n.label));
+  assert.ok(mapped.every((q) => labels.has(q.pattern)), "every question lands on a roadmap node");
+});
+
+test("topo order respects every roadmap edge", () => {
+  assert.equal(TOPO_LABELS.length, NC_NODES.length);
+  const byId = new Map(NC_NODES.map((n) => [n.id, n.label]));
+  for (const n of NC_NODES) for (const p of n.parents) assert.ok(TOPO_RANK[byId.get(p)] < TOPO_RANK[n.label]);
+  assert.deepEqual([...ancestorsOf("Trees")].sort(), ["Arrays & Hashing", "Binary Search", "Linked List", "Two Pointers"]);
+});
+
+test("roadmap order walks the graph and keeps Grind's question set", withFixtures, () => {
+  const plan = buildSchedule(grind, settings({ order: "roadmap" }), ncIndex);
+  assert.equal(plan.questions.length, 75);
+  const ranks = plan.questions.map((q) => TOPO_RANK[q.pattern]);
+  assert.deepEqual(ranks, [...ranks].sort((a, b) => a - b));
+  assert.equal(plan.questions[0].pattern, "Arrays & Hashing");
+  assert.equal(plan.questions.at(-1).week, 8);
+});
+
+test("pinned slugs survive dataset changes", withFixtures, () => {
+  const slugs = ["two-sum", "not-a-real-slug", "valid-parentheses"];
+  const plan = buildSchedule(grind, settings({ order: "all_rounded" }), ncIndex, slugs);
+  assert.deepEqual(plan.questions.map((q) => q.slug), ["two-sum", "valid-parentheses"]);
+  assert.equal(plan.missing, 1);
+});
+
+test("default settings match Grind 75's page defaults", () => {
+  assert.equal(DEFAULT_SETTINGS.mode, "preferences");
+  assert.equal(DEFAULT_SETTINGS.order, "difficulty");
+  assert.equal(DEFAULT_SETTINGS.grouping, "weeks");
+});
+
+test("difficulty order reproduces Grind 75's week 1", withFixtures, () => {
+  const plan = buildSchedule(grind, settings({ weeks: 4, hours: 8 }), ncIndex);
+  const week1 = plan.questions.filter((q) => q.week === 1).map((q) => q.slug);
+  assert.deepEqual(week1.slice(0, 9), [
+    "two-sum", "valid-parentheses", "merge-two-sorted-lists", "best-time-to-buy-and-sell-stock",
+    "valid-palindrome", "invert-binary-tree", "valid-anagram", "binary-search", "flood-fill",
+  ]);
+  assert.equal(week1.length, 13);
+});
+
+test("orderQuestions: grind orders", () => {
+  const qs = [
+    { slug: "a", difficulty: "Hard", topic: "array", priority: 2 },
+    { slug: "b", difficulty: "Easy", topic: "math", priority: 1 },
+    { slug: "c", difficulty: "Easy", topic: "array", priority: 0 },
+  ];
+  assert.deepEqual(orderQuestions(qs, "difficulty").map((q) => q.slug), ["b", "c", "a"]);
+  assert.deepEqual(orderQuestions(qs, "topics").map((q) => q.slug), ["a", "c", "b"]);
+  assert.deepEqual(orderQuestions(qs, "all_rounded").map((q) => q.slug), ["c", "b", "a"]);
+});
+
+test("parseGrindParams reads repeated params and defaults", () => {
+  const s = parseGrindParams("?weeks=4&hours=6&difficulty=Easy&difficulty=Medium&order=topics&grouping=topics");
+  assert.equal(s.weeks, 4);
+  assert.equal(s.hours, 6);
+  assert.deepEqual(s.difficulty, ["Easy", "Medium"]);
+  assert.equal(s.grindOrder, "topics");
+  assert.equal(s.grouping, "topics");
+  const d = parseGrindParams("");
+  assert.equal(d.weeks, 8);
+  assert.equal(d.grindOrder, "difficulty");
+  assert.equal(d.topics, null);
+});
+
+test("daily target spreads backlog over UTC days left in the week", () => {
+  const questions = Array.from({ length: 14 }, (_, i) => ({ slug: `q${i}`, week: i < 7 ? 1 : 2 }));
+  const plan = { startDate: "2026-09-01", settings: { weeks: 2 }, questions };
+  const none = () => false;
+  // Day 1 of week 1: 7 questions over 7 days.
+  assert.equal(dailyTarget(plan, none, new Date("2026-09-01T23:59:00Z")).slugs.length, 1);
+  // Day 7 of week 1 with nothing done: all 7 today.
+  assert.equal(dailyTarget(plan, none, new Date("2026-09-07T00:00:00Z")).slugs.length, 7);
+  // Week 2 day 1 with week 1 undone: 14 over 7 days.
+  const w2 = dailyTarget(plan, none, new Date("2026-09-08T00:00:00Z"));
+  assert.equal(w2.pos.week, 2);
+  assert.deepEqual(w2.slugs, ["q0", "q1"]);
+  assert.equal(planPosition(plan, new Date("2026-08-31T12:00:00Z")).state, "not-started");
+  assert.equal(planPosition(plan, new Date("2026-09-15T00:00:00Z")).state, "overtime");
+  assert.equal(paceSummary(plan, (q) => q.slug === "q0", new Date("2026-09-08T00:00:00Z")).overdue, 6);
+});

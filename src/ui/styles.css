@@ -1,0 +1,180 @@
+/* NeetGrind. On neetcode.io the tokens pick up NeetCode's own CSS variables. */
+.ng-root {
+  --ng-bg: var(--background, #ffffff);
+  --ng-fg: var(--foreground, #111827);
+  --ng-card: var(--card, #ffffff);
+  --ng-border: var(--border, #e5e7eb);
+  --ng-muted: var(--muted, #f3f4f6);
+  --ng-muted-fg: var(--muted-foreground, #6b7280);
+  --ng-primary: var(--primary, #4f46e5);
+  --ng-primary-fg: #ffffff;
+  --ng-done: oklch(0.696 0.17 162.48);
+  --ng-easy: #15803d;
+  --ng-medium: #a16207;
+  --ng-hard: #b91c1c;
+  --ng-warn: #b45309;
+  --ng-node: color-mix(in oklab, var(--ng-primary) 18%, var(--ng-card));
+  --ng-edge: color-mix(in oklab, var(--ng-fg) 30%, transparent);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--ng-fg);
+  box-sizing: border-box;
+}
+.ng-root[data-theme="dark"] {
+  --ng-bg: var(--background, #1b1a1f);
+  --ng-fg: var(--foreground, #f5f5f5);
+  --ng-card: var(--card, #1f1f1f);
+  --ng-border: var(--border, #3f3f3f);
+  --ng-muted: var(--muted, #2b2b2b);
+  --ng-muted-fg: var(--muted-foreground, #c4c4c4);
+  --ng-primary: var(--primary, #7c7cf0);
+  --ng-easy: #4ade80;
+  --ng-medium: #facc15;
+  --ng-hard: #f87171;
+  --ng-warn: #fbbf24;
+  --ng-node: color-mix(in oklab, var(--ng-primary) 30%, var(--ng-card));
+}
+.ng-root *, .ng-root *::before, .ng-root *::after { box-sizing: border-box; }
+.ng-root [hidden], .ng-root[hidden] { display: none !important; }
+
+/* ---------- shared controls ---------- */
+.ng-muted { color: var(--ng-muted-fg); }
+.ng-small { font-size: 12px; }
+.ng-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ng-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 32px; padding: 0 12px; border-radius: 8px;
+  border: 1px solid var(--ng-border); background: var(--ng-card); color: var(--ng-fg);
+  font: 500 13px/1 inherit; cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.ng-btn:hover { background: var(--ng-muted); }
+.ng-btn:disabled { opacity: 0.5; cursor: default; }
+.ng-btn-primary { background: var(--ng-primary); border-color: var(--ng-primary); color: var(--ng-primary-fg); }
+.ng-btn-primary:hover { background: color-mix(in oklab, var(--ng-primary) 85%, black); }
+.ng-btn-ghost { background: transparent; border-color: transparent; }
+.ng-icon-btn { width: 32px; padding: 0; }
+.ng-btn:focus-visible, .ng-seg:focus-visible, .ng-q-title:focus-visible, .ng-zoom-btn:focus-visible, .ng-node:focus-visible {
+  outline: 2px solid var(--ng-primary); outline-offset: 2px;
+}
+.ng-input {
+  width: 100%; min-height: 32px; padding: 4px 8px; border-radius: 8px;
+  border: 1px solid var(--ng-border); background: var(--ng-bg); color: var(--ng-fg); font: 13px inherit;
+  color-scheme: light dark;
+}
+.ng-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ng-muted-fg); border: 0; padding: 0; margin: 0; }
+.ng-field legend { padding: 0; margin-bottom: 4px; }
+.ng-check-label { display: inline-flex; gap: 6px; align-items: center; color: var(--ng-fg); font-size: 13px; }
+.ng-status { font-size: 12px; min-height: 16px; }
+.ng-status a { color: var(--ng-primary); }
+.ng-error { color: var(--ng-hard); font-size: 12px; }
+.ng-warn, .ng-warn-text { color: var(--ng-warn); }
+.ng-warn { font-size: 12px; }
+
+.ng-toggle { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--ng-muted); border: 1px solid var(--ng-border); }
+.ng-seg {
+  border: 0; background: transparent; color: var(--ng-muted-fg); font: 500 13px/1 inherit;
+  padding: 7px 12px; border-radius: 7px; cursor: pointer;
+}
+.ng-seg[aria-pressed="true"] { background: var(--ng-card); color: var(--ng-fg); box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
+
+/* ---------- Grind 75 panel ---------- */
+.ng-grind-panel {
+  position: fixed; right: 16px; bottom: 16px; z-index: 2147483000; width: 300px; max-width: calc(100vw - 32px);
+  background: var(--ng-card); border: 1px solid var(--ng-border); border-radius: 12px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.15); font-size: 13px;
+}
+.ng-grind-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--ng-border); }
+.ng-grind-head .ng-muted { flex: 1; font-size: 12px; }
+.ng-grind-content { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; }
+.ng-grind-body { display: flex; flex-direction: column; gap: 2px; }
+.ng-big { font-size: 18px; font-weight: 600; margin-top: 4px; }
+.ng-big .ng-muted { font-size: 13px; font-weight: 400; }
+.ng-collapsed .ng-grind-content { display: none; }
+.ng-collapsed .ng-grind-head { border-bottom: 0; }
+
+/* ---------- NeetCode roadmap ---------- */
+.ng-toggle:not(.ng-toggle-inline) { position: absolute; top: 12px; left: 12px; z-index: 5; }
+.ng-graph-host { position: absolute; inset: 0; z-index: 1; background: transparent; overflow: hidden; }
+.ng-graph { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; user-select: none; }
+.ng-graph:active { cursor: grabbing; }
+.ng-graph-empty {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 320px; text-align: center;
+  padding: 16px; border-radius: 12px; background: var(--ng-card); border: 1px solid var(--ng-border);
+}
+.ng-edge { fill: none; stroke: var(--ng-edge); stroke-width: 5; transition: stroke 0.2s; }
+.ng-edge.ng-lit { stroke: var(--ng-primary); }
+.ng-node { cursor: pointer; }
+.ng-node-card { fill: var(--ng-node); stroke: color-mix(in oklab, var(--ng-primary) 60%, transparent); stroke-width: 1.5; transition: fill 0.2s; }
+.ng-node:hover .ng-node-card, .ng-node.ng-lit .ng-node-card { fill: color-mix(in oklab, var(--ng-primary) 45%, var(--ng-card)); }
+.ng-node-label { fill: var(--ng-fg); font-size: 26px; font-weight: 600; }
+.ng-node-meta { fill: var(--ng-muted-fg); font-size: 20px; font-variant-numeric: tabular-nums; }
+.ng-node-track { fill: color-mix(in oklab, var(--ng-fg) 85%, transparent); }
+.ng-node-fill { fill: var(--ng-done); }
+.ng-node-empty { cursor: default; opacity: 0.35; }
+.ng-node-empty .ng-node-track, .ng-node-empty .ng-node-fill { display: none; }
+.ng-node-current .ng-node-card { stroke: var(--ng-primary); stroke-width: 5; }
+.ng-node-complete .ng-node-card { stroke: var(--ng-done); stroke-width: 4; }
+.ng-node-selected .ng-node-card { stroke: var(--ng-fg); stroke-width: 5; }
+
+.ng-zoom {
+  position: absolute; left: 16px; bottom: 16px; display: flex; flex-direction: column;
+  border-radius: 10px; overflow: hidden; border: 1px solid var(--ng-border); background: var(--ng-card);
+}
+.ng-zoom-btn { width: 36px; height: 36px; border: 0; background: transparent; color: var(--ng-fg); font-size: 16px; cursor: pointer; }
+.ng-zoom-btn + .ng-zoom-btn { border-top: 1px solid var(--ng-border); }
+.ng-zoom-btn:hover { background: var(--ng-muted); }
+
+.ng-plan-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; font-size: 13px; flex: none; }
+.ng-graph-host .ng-plan-card { position: absolute; top: 60px; right: 12px; width: 280px; background: var(--ng-card); border: 1px solid var(--ng-border); border-radius: 12px; }
+.ng-card-head { display: flex; justify-content: space-between; align-items: baseline; }
+.ng-card-title { font-size: 15px; font-weight: 600; }
+.ng-plan-card p { margin: 0; line-height: 1.4; }
+.ng-progress { height: 6px; border-radius: 3px; background: var(--ng-muted); overflow: hidden; }
+.ng-progress-fill { height: 100%; background: var(--ng-done); }
+.ng-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ng-muted-fg); margin-bottom: 2px; }
+.ng-today { display: flex; flex-direction: column; border-top: 1px solid var(--ng-border); padding-top: 8px; }
+
+.ng-q { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 2px 0; font-size: 13px; }
+.ng-q-title { flex: 1; min-width: 0; color: var(--ng-fg); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ng-q-title:hover { text-decoration: underline; color: var(--ng-primary); }
+.ng-q-done .ng-q-title { color: var(--ng-muted-fg); }
+.ng-dot {
+  flex: none; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--ng-border);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: var(--ng-bg);
+}
+.ng-dot-done { background: var(--ng-done); border-color: var(--ng-done); }
+.ng-check { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--ng-done); }
+.ng-diff { flex: none; font-size: 12px; font-weight: 500; min-width: 48px; text-align: right; }
+.ng-easy { color: var(--ng-easy); }
+.ng-medium { color: var(--ng-medium); }
+.ng-hard { color: var(--ng-hard); }
+.ng-tag { flex: none; font-size: 11px; padding: 2px 6px; border-radius: 6px; background: var(--ng-muted); color: var(--ng-muted-fg); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ng-tag-lc { color: var(--ng-warn); }
+
+.ng-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 1002; width: min(480px, 100vw);
+  background: var(--ng-card); border-left: 1px solid var(--ng-border); box-shadow: -12px 0 32px rgb(0 0 0 / 0.3);
+  transform: translateX(100%); transition: transform 0.2s ease; overflow-y: auto; padding: 16px 20px 32px;
+  display: flex; flex-direction: column; gap: 12px; visibility: hidden;
+}
+.ng-drawer.ng-open { transform: none; visibility: visible; }
+.ng-drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.ng-groups { display: flex; flex-direction: column; gap: 4px; }
+.ng-group { border-bottom: 1px solid var(--ng-border); padding: 4px 0; }
+.ng-group summary { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 8px 0; font-weight: 600; font-size: 14px; list-style: none; }
+.ng-group summary::-webkit-details-marker { display: none; }
+.ng-group summary::before { content: "▸"; margin-right: 8px; color: var(--ng-muted-fg); transition: transform 0.15s; }
+.ng-group[open] summary::before { transform: rotate(90deg); }
+.ng-group summary > span:first-of-type { flex: 1; }
+.ng-form { display: flex; flex-direction: column; gap: 14px; }
+.ng-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ng-drawer, .ng-edge, .ng-node-card, .ng-group summary::before { transition: none; }
+}
+.ng-btn-sm { min-height: 26px; padding: 0 8px; font-size: 12px; color: var(--ng-muted-fg); }
+
+@media (max-width: 768px) {
+  .ng-graph-host .ng-plan-card { top: auto; left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 45%; overflow-y: auto; }
+  .ng-zoom { left: auto; bottom: auto; right: 12px; top: 12px; }
+  .ng-q-title { white-space: normal; }
+}
