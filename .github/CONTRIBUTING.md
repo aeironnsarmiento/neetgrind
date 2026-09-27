@@ -14,7 +14,7 @@ Thanks for helping! NeetGrind is small, so the process is simple.
    ```
 3. **Open a pull request** against `main`.
 
-`main` is protected. Every pull request needs an approving review from the maintainer (see [CODEOWNERS](.github/CODEOWNERS)) before it can be merged. Pushing a new commit dismisses earlier approvals. Direct pushes and force-pushes to `main` are blocked.
+`main` is protected. Every pull request needs an approving review from the maintainer (see [CODEOWNERS](CODEOWNERS)) before it can be merged. Pushing a new commit dismisses earlier approvals. Direct pushes and force-pushes to `main` are blocked.
 
 ## Guidelines
 
