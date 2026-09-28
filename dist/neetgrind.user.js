@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/dist/neetgrind.user.js
 // @license      MIT
 // @icon         https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/assets/icon-64.png
-// @version      0.2.4
+// @version      0.2.5
 // @description  Build a custom Grind 75 study plan and view it on NeetCode's roadmap graph.
 // @match        https://www.techinterviewhandbook.org/grind75*
 // @match        https://neetcode.io/*
@@ -835,6 +835,14 @@
     }
     return { pos, slugs };
   }
+  function nextDayTarget(plan, isDone, now = /* @__PURE__ */ new Date()) {
+    const daysLeft = plan.settings.weeks * 7 - (utcDay(now) - utcDay(plan.startDate));
+    for (let d = 1; d <= Math.max(1, daysLeft); d++) {
+      const next = dailyTarget(plan, isDone, new Date(new Date(now).getTime() + d * DAY_MS));
+      if (next.slugs.length) return next;
+    }
+    return { pos: planPosition(plan, now), slugs: [] };
+  }
   function paceSummary(plan, isDone, now = /* @__PURE__ */ new Date()) {
     const pos = planPosition(plan, now);
     const done = plan.questions.filter(isDone).length;
@@ -1150,6 +1158,7 @@
 .ng-progress-fill { height: 100%; background: var(--ng-done); }
 .ng-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ng-muted-fg); margin-bottom: 2px; }
 .ng-today { display: flex; flex-direction: column; border-top: 1px solid var(--ng-border); padding-top: 8px; }
+.ng-today-done { padding-top: 4px; }
 
 .ng-q { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 2px 0; font-size: 13px; }
 .ng-q-title { flex: 1; min-width: 0; color: var(--ng-fg); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1169,7 +1178,8 @@
 .ng-tag-lc { color: var(--ng-warn); }
 .ng-tag-co { display: inline-flex; align-items: center; gap: 4px; max-width: 140px; color: var(--ng-primary); background: color-mix(in oklab, var(--ng-primary) 14%, transparent); }
 .ng-co-name { overflow: hidden; text-overflow: ellipsis; }
-.ng-co-icon { flex: none; vertical-align: -1px; }
+.ng-co-icon { display: inline-block; flex: none; vertical-align: -1px; }
+.ng-co-summary { display: flex; align-items: center; gap: 4px; }
 .ng-co-line { display: flex; flex-direction: column; gap: 2px; }
 .ng-co-update { color: var(--ng-warn); }
 .ng-co-chips { flex-wrap: wrap; gap: 6px; }
@@ -1778,13 +1788,19 @@
       }
       if (state.drawer === "replan") render();
     }
-    function todaySlugs(plan, isDone) {
+    function todayList(plan, isDone) {
       const day = todayUtcISO();
       const cached2 = storage.get("today", null);
-      if (cached2 && cached2.planId === plan.id && cached2.day === day && cached2.order === plan.settings.order) return cached2.slugs;
+      if (cached2 && cached2.planId === plan.id && cached2.day === day && cached2.order === plan.settings.order) {
+        return { slugs: cached2.slugs, ahead: cached2.ahead ?? 0 };
+      }
       const { slugs } = dailyTarget(plan, isDone);
-      storage.set("today", { planId: plan.id, day, order: plan.settings.order, slugs });
-      return slugs;
+      storage.set("today", { planId: plan.id, day, order: plan.settings.order, slugs, ahead: 0 });
+      return { slugs, ahead: 0 };
+    }
+    function startNextDay(plan, isDone, ahead, slugs) {
+      storage.set("today", { planId: plan.id, day: todayUtcISO(), order: plan.settings.order, slugs, ahead: ahead + 1 });
+      render();
     }
     function findHost() {
       const graph = document.querySelector("app-graph");
@@ -1862,7 +1878,7 @@
         stats.set(q.pattern, st);
       }
       const bySlug = new Map((sched?.questions ?? []).map((q) => [q.slug, q]));
-      const todayTopics = new Set(sched ? todaySlugs(sched, isDone).map((s2) => bySlug.get(s2)?.pattern) : []);
+      const todayTopics = new Set(sched ? todayList(sched, isDone).slugs.map((s2) => bySlug.get(s2)?.pattern) : []);
       const graph = renderPlanGraph({
         stats,
         focus: todayTopics,
@@ -1924,9 +1940,10 @@
       }
       const pace = paceSummary(sched, isDone);
       const { pos } = pace;
-      const today = todaySlugs(sched, isDone);
+      const today = todayList(sched, isDone);
       const bySlug = new Map(sched.questions.map((q) => [q.slug, q]));
-      const todayQs = today.map((slug) => bySlug.get(slug)).filter(Boolean);
+      const todayQs = today.slugs.map((slug) => bySlug.get(slug)).filter(Boolean);
+      const upNext = pos.state !== "not-started" && todayQs.every(isDone) ? nextDayTarget(sched, isDone).slugs : [];
       const next = todayQs.find((q) => !isDone(q)) ?? sched.questions.find((q) => q.week <= pos.week && !isDone(q)) ?? sched.questions.find((q) => !isDone(q));
       const when = pos.state === "not-started" ? `Starts ${formatDate(sched.startDate)} (in ${pos.daysUntilStart}d)` : pos.state === "overtime" ? `Plan ended \xB7 ${pace.total - pace.done} left` : `Week ${pos.week} of ${pos.weeks} \xB7 Day ${pos.dayOfWeek}`;
       fill(
@@ -1949,11 +1966,17 @@
           pos.state === "not-started" ? `${sched.settings.weeks} wks \xB7 ${sched.settings.hours} h/wk` : `This week ${pace.weekDone}/${pace.weekTotal}`,
           pace.overdue ? h("span", { class: "ng-warn-text" }, ` \xB7 ${pace.overdue} overdue`) : null
         ),
-        todayQs.length ? h(
+        todayQs.length || upNext.length ? h(
           "div",
           { class: "ng-today" },
-          h("div", { class: "ng-label" }, "Today"),
-          todayQs.map((q) => questionRow(q, isDone, { compact: true }))
+          h("div", { class: "ng-label" }, today.ahead ? `Today \xB7 ${today.ahead} day${today.ahead > 1 ? "s" : ""} ahead` : "Today"),
+          todayQs.map((q) => questionRow(q, isDone, { compact: true })),
+          upNext.length ? h(
+            "div",
+            { class: "ng-muted ng-small ng-today-done" },
+            "Done for today \xB7 ",
+            h("button", { class: "ng-link", onclick: () => startNextDay(sched, isDone, today.ahead, upNext) }, "Start next day")
+          ) : null
         ) : null,
         h(
           "div",
@@ -1984,9 +2007,9 @@
         { class: "ng-co-line ng-small" },
         h(
           "div",
-          { class: "ng-muted" },
+          { class: "ng-muted ng-co-summary" },
           buildingIcon(),
-          ` ${sched.companyCount} company-tagged \xB7 ${names || "picked"} (${WINDOW_LABELS[co.window] ?? co.window})`
+          `${sched.companyCount} company-tagged \xB7 ${names || "picked"} (${WINDOW_LABELS[co.window] ?? co.window})`
         ),
         update ? h(
           "div",
