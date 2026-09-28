@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/dist/neetgrind.user.js
 // @license      MIT
 // @icon         https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/assets/icon-64.png
-// @version      0.2.3
+// @version      0.2.4
 // @description  Build a custom Grind 75 study plan and view it on NeetCode's roadmap graph.
 // @match        https://www.techinterviewhandbook.org/grind75*
 // @match        https://neetcode.io/*
@@ -346,46 +346,6 @@
       if (e.origin !== location.origin || e.data?.tag !== TAG) return;
       onCapture(e.data);
     });
-  }
-
-  // src/core/daily.js
-  var DAY_MS = 864e5;
-  var utcDay = (date) => Math.floor(new Date(date).getTime() / DAY_MS);
-  function todayUtcISO(now = /* @__PURE__ */ new Date()) {
-    return new Date(utcDay(now) * DAY_MS).toISOString().slice(0, 10);
-  }
-  function planPosition(plan, now = /* @__PURE__ */ new Date()) {
-    const weeks = plan.settings.weeks;
-    const dayIndex = utcDay(now) - utcDay(plan.startDate);
-    const totalDays = weeks * 7;
-    if (dayIndex < 0) return { state: "not-started", dayIndex, week: 1, weeks, daysLeftInWeek: 7, daysUntilStart: -dayIndex };
-    if (dayIndex >= totalDays) return { state: "overtime", dayIndex, week: weeks, weeks, daysLeftInWeek: 1 };
-    const week = Math.floor(dayIndex / 7) + 1;
-    return { state: "active", dayIndex, week, weeks, dayOfWeek: dayIndex % 7 + 1, daysLeftInWeek: 7 - dayIndex % 7 };
-  }
-  function backlog(questions, week, isDone) {
-    return questions.filter((q) => q.week <= week && !isDone(q));
-  }
-  function dailyTarget(plan, isDone, now = /* @__PURE__ */ new Date()) {
-    const pos = planPosition(plan, now);
-    if (pos.state === "not-started") return { pos, slugs: [] };
-    const pending = backlog(plan.questions, pos.week, isDone);
-    const count = Math.ceil(pending.length / pos.daysLeftInWeek);
-    return { pos, slugs: pending.slice(0, count).map((q) => q.slug) };
-  }
-  function paceSummary(plan, isDone, now = /* @__PURE__ */ new Date()) {
-    const pos = planPosition(plan, now);
-    const done = plan.questions.filter(isDone).length;
-    const overdue = plan.questions.filter((q) => q.week < pos.week && !isDone(q)).length;
-    const thisWeek = plan.questions.filter((q) => q.week === pos.week);
-    return {
-      pos,
-      done,
-      total: plan.questions.length,
-      overdue: pos.state === "not-started" ? 0 : overdue,
-      weekDone: thisWeek.filter(isDone).length,
-      weekTotal: thisWeek.length
-    };
   }
 
   // src/core/roadmap.js
@@ -840,6 +800,54 @@
       for (const q of [...questions].sort((a, b) => a.week - b.week)) add(`Week ${q.week}`, q);
     }
     return [...groups.entries()].filter(([, list]) => list.length).map(([name, list]) => ({ name, questions: list }));
+  }
+
+  // src/core/daily.js
+  var DAY_MS = 864e5;
+  var utcDay = (date) => Math.floor(new Date(date).getTime() / DAY_MS);
+  function todayUtcISO(now = /* @__PURE__ */ new Date()) {
+    return new Date(utcDay(now) * DAY_MS).toISOString().slice(0, 10);
+  }
+  function planPosition(plan, now = /* @__PURE__ */ new Date()) {
+    const weeks = plan.settings.weeks;
+    const dayIndex = utcDay(now) - utcDay(plan.startDate);
+    const totalDays = weeks * 7;
+    if (dayIndex < 0) return { state: "not-started", dayIndex, week: 1, weeks, daysLeftInWeek: 7, daysUntilStart: -dayIndex };
+    if (dayIndex >= totalDays) return { state: "overtime", dayIndex, week: weeks, weeks, daysLeftInWeek: 1 };
+    const week = Math.floor(dayIndex / 7) + 1;
+    return { state: "active", dayIndex, week, weeks, dayOfWeek: dayIndex % 7 + 1, daysLeftInWeek: 7 - dayIndex % 7 };
+  }
+  function backlog(questions, week, isDone) {
+    return questions.filter((q) => q.week <= week && !isDone(q));
+  }
+  var minutesOf = (q) => Math.round(costOf({ duration: q.duration ?? EST_DURATION[q.difficulty] ?? 30 }));
+  function dailyTarget(plan, isDone, now = /* @__PURE__ */ new Date()) {
+    const pos = planPosition(plan, now);
+    if (pos.state === "not-started") return { pos, slugs: [] };
+    const pending = backlog(plan.questions, pos.week, isDone);
+    const total = pending.reduce((sum, q) => sum + minutesOf(q), 0);
+    const slugs = [];
+    let used = 0;
+    for (const q of pending) {
+      if (used * pos.daysLeftInWeek >= total) break;
+      used += minutesOf(q);
+      slugs.push(q.slug);
+    }
+    return { pos, slugs };
+  }
+  function paceSummary(plan, isDone, now = /* @__PURE__ */ new Date()) {
+    const pos = planPosition(plan, now);
+    const done = plan.questions.filter(isDone).length;
+    const overdue = plan.questions.filter((q) => q.week < pos.week && !isDone(q)).length;
+    const thisWeek = plan.questions.filter((q) => q.week === pos.week);
+    return {
+      pos,
+      done,
+      total: plan.questions.length,
+      overdue: pos.state === "not-started" ? 0 : overdue,
+      weekDone: thisWeek.filter(isDone).length,
+      weekTotal: thisWeek.length
+    };
   }
 
   // src/platform/http.js
