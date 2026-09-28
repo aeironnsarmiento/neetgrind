@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/dist/neetgrind.user.js
 // @license      MIT
 // @icon         https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/assets/icon-64.png
-// @version      0.2.2
+// @version      0.2.3
 // @description  Build a custom Grind 75 study plan and view it on NeetCode's roadmap graph.
 // @match        https://www.techinterviewhandbook.org/grind75*
 // @match        https://neetcode.io/*
@@ -227,7 +227,8 @@
         if (!res || typeof res !== "object") return null;
         const slugs = /* @__PURE__ */ new Set();
         collect(res, slugs);
-        return { server: { at: now, slugs: [...slugs] }, marks: {}, accepted: {} };
+        const marks = Object.fromEntries(Object.entries(next.marks).filter(([, m]) => !m.done));
+        return { server: { at: now, slugs: [...slugs] }, marks, accepted: next.accepted };
       }
       case "markProblemComplete":
       case "markProblemIncomplete": {
@@ -241,11 +242,13 @@
     }
   }
   function isSolved(q, state, fallback) {
-    const acc = [q.ncLink, q.slug].map((k) => k && state?.accepted?.[normalizeSlug(k)]).filter(Boolean).sort().at(-1);
+    const keys = [q.slug, q.ncLink].filter(Boolean).map(normalizeSlug);
+    const acc = keys.map((k) => state?.accepted?.[k]).filter(Boolean).sort().at(-1);
     const mark = state?.marks?.[q.slug];
     if (acc && (!mark || acc >= mark.at)) return true;
-    if (mark) return mark.done;
-    return state?.server ? state.server.slugs.includes(q.slug) : fallback.has(q.slug);
+    if (mark && (!state.server || mark.at > state.server.at)) return mark.done;
+    const base = state?.server ? new Set(state.server.slugs) : fallback;
+    return keys.some((k) => base.has(k));
   }
   var listeners = /* @__PURE__ */ new Set();
   var onProgress = (fn) => listeners.add(fn);
