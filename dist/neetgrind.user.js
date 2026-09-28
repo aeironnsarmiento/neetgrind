@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/dist/neetgrind.user.js
 // @license      MIT
 // @icon         https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/assets/icon-64.png
-// @version      0.2.1
+// @version      0.2.2
 // @description  Build a custom Grind 75 study plan and view it on NeetCode's roadmap graph.
 // @match        https://www.techinterviewhandbook.org/grind75*
 // @match        https://neetcode.io/*
@@ -18,51 +18,11 @@
 // @connect      neetcode.io
 // @connect      raw.githubusercontent.com
 // @connect      api.github.com
-// @run-at       document-idle
+// @run-at       document-start
 // @noframes
 // ==/UserScript==
 
 (() => {
-  // src/core/daily.js
-  var DAY_MS = 864e5;
-  var utcDay = (date) => Math.floor(new Date(date).getTime() / DAY_MS);
-  function todayUtcISO(now = /* @__PURE__ */ new Date()) {
-    return new Date(utcDay(now) * DAY_MS).toISOString().slice(0, 10);
-  }
-  function planPosition(plan, now = /* @__PURE__ */ new Date()) {
-    const weeks = plan.settings.weeks;
-    const dayIndex = utcDay(now) - utcDay(plan.startDate);
-    const totalDays = weeks * 7;
-    if (dayIndex < 0) return { state: "not-started", dayIndex, week: 1, weeks, daysLeftInWeek: 7, daysUntilStart: -dayIndex };
-    if (dayIndex >= totalDays) return { state: "overtime", dayIndex, week: weeks, weeks, daysLeftInWeek: 1 };
-    const week = Math.floor(dayIndex / 7) + 1;
-    return { state: "active", dayIndex, week, weeks, dayOfWeek: dayIndex % 7 + 1, daysLeftInWeek: 7 - dayIndex % 7 };
-  }
-  function backlog(questions, week, isDone) {
-    return questions.filter((q) => q.week <= week && !isDone(q));
-  }
-  function dailyTarget(plan, isDone, now = /* @__PURE__ */ new Date()) {
-    const pos = planPosition(plan, now);
-    if (pos.state === "not-started") return { pos, slugs: [] };
-    const pending = backlog(plan.questions, pos.week, isDone);
-    const count = Math.ceil(pending.length / pos.daysLeftInWeek);
-    return { pos, slugs: pending.slice(0, count).map((q) => q.slug) };
-  }
-  function paceSummary(plan, isDone, now = /* @__PURE__ */ new Date()) {
-    const pos = planPosition(plan, now);
-    const done = plan.questions.filter(isDone).length;
-    const overdue = plan.questions.filter((q) => q.week < pos.week && !isDone(q)).length;
-    const thisWeek = plan.questions.filter((q) => q.week === pos.week);
-    return {
-      pos,
-      done,
-      total: plan.questions.length,
-      overdue: pos.state === "not-started" ? 0 : overdue,
-      weekDone: thisWeek.filter(isDone).length,
-      weekTotal: thisWeek.length
-    };
-  }
-
   // src/core/mapping.js
   var UNMATCHED_OVERRIDES = {
     "01-matrix": "Graphs",
@@ -178,6 +138,251 @@
   }
   function problemUrl(q) {
     return q.ncLink ? `https://neetcode.io/problems/${q.ncLink}` : `https://leetcode.com/problems/${q.slug}/`;
+  }
+
+  // src/platform/storage.js
+  var hasGM = typeof GM_getValue === "function" && typeof GM_setValue === "function";
+  var PREFIX = "neetgrind:";
+  var storage = {
+    get(key, fallback = null) {
+      try {
+        if (hasGM) return GM_getValue(key, fallback);
+        const raw = localStorage.getItem(PREFIX + key);
+        return raw == null ? fallback : JSON.parse(raw);
+      } catch {
+        return fallback;
+      }
+    },
+    set(key, value) {
+      try {
+        if (hasGM) GM_setValue(key, value);
+        else localStorage.setItem(PREFIX + key, JSON.stringify(value));
+      } catch (err) {
+        console.warn("[NeetGrind] storage write failed", key, err);
+      }
+    }
+  };
+
+  // src/data/neetcodeProgress.js
+  function collect(value, out) {
+    if (typeof value === "string") out.add(normalizeSlug(value));
+    else if (Array.isArray(value)) value.forEach((v) => collect(v, out));
+    else if (value && typeof value === "object") {
+      for (const [k, v] of Object.entries(value)) {
+        if (v === true) out.add(normalizeSlug(k));
+        else collect(v, out);
+      }
+    }
+  }
+  function parseJson(raw) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  function readCompletedSlugs(ls = localStorage) {
+    const out = /* @__PURE__ */ new Set();
+    const synced = parseJson(ls.getItem("synced-progress-cache"));
+    if (synced?.completed) collect(synced.completed, out);
+    const local = parseJson(ls.getItem("completed-problem-list"));
+    if (local) collect(local, out);
+    return out;
+  }
+  var FAILED = /^(wrong answer|time limit exceeded|memory limit exceeded|runtime error|compil(e|ation) error|output limit exceeded)$/i;
+  function isAcceptedResponse(res) {
+    let accepted = false;
+    let failed = false;
+    const walk = (v, depth) => {
+      if (depth > 6 || failed) return;
+      if (typeof v === "string") {
+        if (/^accepted$/i.test(v.trim())) accepted = true;
+        else if (FAILED.test(v.trim())) failed = true;
+      } else if (Array.isArray(v)) v.forEach((x) => walk(x, depth + 1));
+      else if (v && typeof v === "object") {
+        for (const [k, x] of Object.entries(v)) {
+          if (/^(is)?accepted$/i.test(k) && typeof x === "boolean") x ? accepted = true : failed = true;
+          else walk(x, depth + 1);
+        }
+      }
+    };
+    walk(res, 0);
+    return accepted && !failed;
+  }
+  var EMPTY = () => ({ server: null, marks: {}, accepted: {} });
+  function applyCapture(state, cap, now = (/* @__PURE__ */ new Date()).toISOString()) {
+    if (cap.status !== 200) return null;
+    const req = parseJson(cap.body)?.data ?? {};
+    const res = parseJson(cap.text)?.data;
+    const next = { ...EMPTY(), ...state, marks: { ...state?.marks }, accepted: { ...state?.accepted } };
+    if (/\/executeCodeFunctionHttp\b/.test(cap.url)) {
+      if (!isAcceptedResponse(res)) return null;
+      const ids = new Set([req.problemId, cap.path?.match(/^\/problems\/([^/]+)/)?.[1]].map(normalizeSlug).filter(Boolean));
+      if (!ids.size) return null;
+      for (const id of ids) next.accepted[id] = now;
+      return next;
+    }
+    switch (req.functionId) {
+      case "getCompletedProblems": {
+        if (!res || typeof res !== "object") return null;
+        const slugs = /* @__PURE__ */ new Set();
+        collect(res, slugs);
+        return { server: { at: now, slugs: [...slugs] }, marks: {}, accepted: {} };
+      }
+      case "markProblemComplete":
+      case "markProblemIncomplete": {
+        const slug = normalizeSlug(req.problem);
+        if (!slug) return null;
+        next.marks[slug] = { done: req.functionId === "markProblemComplete", at: now };
+        return next;
+      }
+      default:
+        return null;
+    }
+  }
+  function isSolved(q, state, fallback) {
+    const acc = [q.ncLink, q.slug].map((k) => k && state?.accepted?.[normalizeSlug(k)]).filter(Boolean).sort().at(-1);
+    const mark = state?.marks?.[q.slug];
+    if (acc && (!mark || acc >= mark.at)) return true;
+    if (mark) return mark.done;
+    return state?.server ? state.server.slugs.includes(q.slug) : fallback.has(q.slug);
+  }
+  var listeners = /* @__PURE__ */ new Set();
+  var onProgress = (fn) => listeners.add(fn);
+  function debugOn() {
+    try {
+      return localStorage.getItem("neetgrind:debug") === "1";
+    } catch {
+      return false;
+    }
+  }
+  function debugLog(cap, next) {
+    const req = parseJson(cap.body)?.data ?? {};
+    const { rawCode, ...reqShown } = req;
+    console.log(
+      "[NeetGrind] captured",
+      cap.url.replace(/^.*\//, ""),
+      reqShown,
+      `status ${cap.status}`,
+      next ? "\u2192 progress updated" : "\u2192 ignored",
+      "\nresponse:",
+      cap.text.length > 4e3 ? `${cap.text.slice(0, 4e3)}\u2026 (${cap.text.length} chars)` : cap.text
+    );
+  }
+  function recordCapture(cap) {
+    const next = applyCapture(storage.get("ncProgress", null), cap);
+    if (debugOn()) debugLog(cap, next);
+    if (!next) return;
+    storage.set("ncProgress", next);
+    listeners.forEach((fn) => fn());
+  }
+  var lcDone = {
+    all: () => storage.get("lcDone", {}),
+    toggle(slug) {
+      const all = storage.get("lcDone", {});
+      if (all[slug]) delete all[slug];
+      else all[slug] = (/* @__PURE__ */ new Date()).toISOString();
+      storage.set("lcDone", all);
+    }
+  };
+  function makeIsDone() {
+    const state = storage.get("ncProgress", null);
+    const ls = readCompletedSlugs();
+    const lc = lcDone.all();
+    return (q) => q.leetcodeOnly ? Boolean(lc[q.slug]) : isSolved(q, state, ls);
+  }
+
+  // src/platform/netHook.js
+  var TAG = "neetgrind:net";
+  function pageHook(tag) {
+    if (window.__neetgrindNetHook) return;
+    window.__neetgrindNetHook = true;
+    const WATCH = /\/(callableFunctionHttp|executeCodeFunctionHttp)(?:[?#]|$)/;
+    const post = (url, body, status, text) => {
+      try {
+        window.postMessage(
+          { tag, url: String(url), body: typeof body === "string" ? body : null, status, text: String(text ?? ""), path: location.pathname },
+          location.origin
+        );
+      } catch {
+      }
+    };
+    const XHR = XMLHttpRequest.prototype;
+    const open = XHR.open;
+    const send = XHR.send;
+    XHR.open = function(method, url) {
+      this.__ngUrl = String(url);
+      return open.apply(this, arguments);
+    };
+    XHR.send = function(body) {
+      if (WATCH.test(this.__ngUrl ?? "")) {
+        this.addEventListener("load", () => {
+          const text = this.responseType === "" || this.responseType === "text" ? this.responseText : JSON.stringify(this.response);
+          post(this.__ngUrl, body, this.status, text);
+        });
+      }
+      return send.apply(this, arguments);
+    };
+    const fetch0 = window.fetch;
+    window.fetch = function(input, init) {
+      const url = typeof input === "string" ? input : input?.url ?? String(input);
+      const res = fetch0.apply(this, arguments);
+      if (WATCH.test(url)) {
+        res.then((r) => r.clone().text().then((t) => post(url, init?.body, r.status, t))).catch(() => {
+        });
+      }
+      return res;
+    };
+  }
+  function installNetHook(onCapture) {
+    const el = document.createElement("script");
+    el.textContent = `(${pageHook})(${JSON.stringify(TAG)});`;
+    (document.head || document.documentElement).appendChild(el);
+    el.remove();
+    window.addEventListener("message", (e) => {
+      if (e.origin !== location.origin || e.data?.tag !== TAG) return;
+      onCapture(e.data);
+    });
+  }
+
+  // src/core/daily.js
+  var DAY_MS = 864e5;
+  var utcDay = (date) => Math.floor(new Date(date).getTime() / DAY_MS);
+  function todayUtcISO(now = /* @__PURE__ */ new Date()) {
+    return new Date(utcDay(now) * DAY_MS).toISOString().slice(0, 10);
+  }
+  function planPosition(plan, now = /* @__PURE__ */ new Date()) {
+    const weeks = plan.settings.weeks;
+    const dayIndex = utcDay(now) - utcDay(plan.startDate);
+    const totalDays = weeks * 7;
+    if (dayIndex < 0) return { state: "not-started", dayIndex, week: 1, weeks, daysLeftInWeek: 7, daysUntilStart: -dayIndex };
+    if (dayIndex >= totalDays) return { state: "overtime", dayIndex, week: weeks, weeks, daysLeftInWeek: 1 };
+    const week = Math.floor(dayIndex / 7) + 1;
+    return { state: "active", dayIndex, week, weeks, dayOfWeek: dayIndex % 7 + 1, daysLeftInWeek: 7 - dayIndex % 7 };
+  }
+  function backlog(questions, week, isDone) {
+    return questions.filter((q) => q.week <= week && !isDone(q));
+  }
+  function dailyTarget(plan, isDone, now = /* @__PURE__ */ new Date()) {
+    const pos = planPosition(plan, now);
+    if (pos.state === "not-started") return { pos, slugs: [] };
+    const pending = backlog(plan.questions, pos.week, isDone);
+    const count = Math.ceil(pending.length / pos.daysLeftInWeek);
+    return { pos, slugs: pending.slice(0, count).map((q) => q.slug) };
+  }
+  function paceSummary(plan, isDone, now = /* @__PURE__ */ new Date()) {
+    const pos = planPosition(plan, now);
+    const done = plan.questions.filter(isDone).length;
+    const overdue = plan.questions.filter((q) => q.week < pos.week && !isDone(q)).length;
+    const thisWeek = plan.questions.filter((q) => q.week === pos.week);
+    return {
+      pos,
+      done,
+      total: plan.questions.length,
+      overdue: pos.state === "not-started" ? 0 : overdue,
+      weekDone: thisWeek.filter(isDone).length,
+      weekTotal: thisWeek.length
+    };
   }
 
   // src/core/roadmap.js
@@ -658,29 +863,6 @@
   async function fetchJson(url) {
     return JSON.parse(await fetchText(url));
   }
-
-  // src/platform/storage.js
-  var hasGM = typeof GM_getValue === "function" && typeof GM_setValue === "function";
-  var PREFIX = "neetgrind:";
-  var storage = {
-    get(key, fallback = null) {
-      try {
-        if (hasGM) return GM_getValue(key, fallback);
-        const raw = localStorage.getItem(PREFIX + key);
-        return raw == null ? fallback : JSON.parse(raw);
-      } catch {
-        return fallback;
-      }
-    },
-    set(key, value) {
-      try {
-        if (hasGM) GM_setValue(key, value);
-        else localStorage.setItem(PREFIX + key, JSON.stringify(value));
-      } catch (err) {
-        console.warn("[NeetGrind] storage write failed", key, err);
-      }
-    }
-  };
 
   // src/data/cache.js
   async function cached(name, key, load, { force = false } = {}) {
@@ -1254,47 +1436,6 @@
     const lists = {};
     for (const name of names) lists[name] = await loadCompanyList(name, window2, version.sha);
     return { companyPool: mergeCompanyRows(lists), companyVersion: version };
-  }
-
-  // src/data/neetcodeProgress.js
-  function collect(value, out) {
-    if (typeof value === "string") out.add(normalizeSlug(value));
-    else if (Array.isArray(value)) value.forEach((v) => collect(v, out));
-    else if (value && typeof value === "object") {
-      for (const [k, v] of Object.entries(value)) {
-        if (v === true) out.add(normalizeSlug(k));
-        else collect(v, out);
-      }
-    }
-  }
-  function readJson(ls, key) {
-    try {
-      return JSON.parse(ls.getItem(key));
-    } catch {
-      return null;
-    }
-  }
-  function readCompletedSlugs(ls = localStorage) {
-    const out = /* @__PURE__ */ new Set();
-    const synced = readJson(ls, "synced-progress-cache");
-    if (synced?.completed) collect(synced.completed, out);
-    const local = readJson(ls, "completed-problem-list");
-    if (local) collect(local, out);
-    return out;
-  }
-  var lcDone = {
-    all: () => storage.get("lcDone", {}),
-    toggle(slug) {
-      const all = storage.get("lcDone", {});
-      if (all[slug]) delete all[slug];
-      else all[slug] = (/* @__PURE__ */ new Date()).toISOString();
-      storage.set("lcDone", all);
-    }
-  };
-  function makeIsDone() {
-    const nc = readCompletedSlugs();
-    const lc = lcDone.all();
-    return (q) => q.leetcodeOnly ? Boolean(lc[q.slug]) : nc.has(q.slug);
   }
 
   // src/data/neetcodeSource.js
@@ -2272,6 +2413,7 @@ ${title}` },
     }
     setInterval(tick, 400);
     tick();
+    onProgress(render);
     window.addEventListener("focus", render);
     window.addEventListener("storage", render);
     window.addEventListener("resize", () => mounted() && state.mode === "plan" && placeCard());
@@ -2283,6 +2425,7 @@ ${title}` },
   }
 
   // src/main.js
+  if (location.hostname === "neetcode.io") installNetHook(recordCapture);
   function start() {
     const { hostname, pathname } = location;
     if (hostname.endsWith("techinterviewhandbook.org") && pathname.startsWith("/grind75")) initGrindPanel();
