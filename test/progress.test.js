@@ -19,10 +19,18 @@ const submit = (problemId, data, path = `/problems/${problemId}/question`) => ({
 });
 const q = (slug, ncLink = null) => ({ slug, ncLink, leetcodeOnly: false });
 
-test("getCompletedProblems becomes a snapshot and clears older updates", () => {
-  const before = { server: null, marks: { "two-sum": { done: false, at: "1" } }, accepted: { x: "1" } };
+test("getCompletedProblems replaces the list but keeps editor solves and unticks", () => {
+  const before = {
+    server: null,
+    marks: { "two-sum": { done: false, at: "1" }, "valid-anagram": { done: true, at: "1" } },
+    accepted: { "two-integer-sum": "1" },
+  };
   const next = applyCapture(before, call("getCompletedProblems", {}, { "Arrays & Hashing": ["two-sum/", "contains-duplicate/"] }), "2");
-  assert.deepEqual(next, { server: { at: "2", slugs: ["two-sum", "contains-duplicate"] }, marks: {}, accepted: {} });
+  assert.deepEqual(next, {
+    server: { at: "2", slugs: ["two-sum", "contains-duplicate"] },
+    marks: { "two-sum": { done: false, at: "1" } },
+    accepted: { "two-integer-sum": "1" },
+  });
 });
 
 test("checkbox clicks are recorded by LeetCode slug", () => {
@@ -54,14 +62,21 @@ test("isAcceptedResponse", () => {
   assert.equal(isAcceptedResponse(null), false);
 });
 
-test("isSolved: newest signal wins, localStorage only without a snapshot", () => {
+test("isSolved", () => {
   const ls = new Set(["two-sum"]);
-  assert.equal(isSolved(q("two-sum"), null, ls), true);
-  const snap = { server: { at: "1", slugs: [] }, marks: {}, accepted: {} };
-  assert.equal(isSolved(q("two-sum"), snap, ls), false);
-  assert.equal(isSolved(q("two-sum", "two-integer-sum"), { ...snap, accepted: { "two-integer-sum": "2" } }, ls), true);
+  const tsq = q("two-sum", "two-integer-sum");
+  // localStorage only until the first list is seen
+  assert.equal(isSolved(tsq, null, ls), true);
+  const snap = { server: { at: "5", slugs: [] }, marks: {}, accepted: {} };
+  assert.equal(isSolved(tsq, snap, ls), false);
+  // an editor solve survives a newer list that doesn't include it (the refresh bug)
+  assert.equal(isSolved(tsq, { ...snap, accepted: { "two-integer-sum": "2" } }, ls), true);
+  // ...until it's unticked later, even after another list arrives
   const unticked = { ...snap, accepted: { "two-integer-sum": "2" }, marks: { "two-sum": { done: false, at: "3" } } };
-  assert.equal(isSolved(q("two-sum", "two-integer-sum"), unticked, ls), false);
-  const reticked = { ...unticked, accepted: { "two-integer-sum": "4" } };
-  assert.equal(isSolved(q("two-sum", "two-integer-sum"), reticked, ls), true);
+  assert.equal(isSolved(tsq, unticked, ls), false);
+  assert.equal(isSolved(tsq, { ...unticked, accepted: { "two-integer-sum": "4" } }, ls), true);
+  // an old untick loses to a newer list that has it ticked
+  assert.equal(isSolved(tsq, { server: { at: "5", slugs: ["two-sum"] }, marks: { "two-sum": { done: false, at: "3" } }, accepted: {} }, ls), true);
+  // lists that use NeetCode ids still match
+  assert.equal(isSolved(tsq, { server: { at: "5", slugs: ["two-integer-sum"] }, marks: {}, accepted: {} }, ls), true);
 });

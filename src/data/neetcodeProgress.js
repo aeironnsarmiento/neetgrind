@@ -1,7 +1,8 @@
-// NeetCode completion data (read-only). Three sources, newest wins:
+// NeetCode completion data (read-only). Three sources:
 // 1. Server: logged-in progress lives on NeetCode's server. We see it by watching the page's own
-//    API calls (platform/netHook.js): getCompletedProblems gives a full snapshot, markProblem(In)complete
-//    and an Accepted executeCodeFunctionHttp submission give single updates.
+//    API calls (platform/netHook.js): getCompletedProblems gives the checkbox list, markProblem(In)complete
+//    are checkbox clicks, and an Accepted executeCodeFunctionHttp is a solve in NeetCode's editor.
+//    Editor solves don't show up in getCompletedProblems, so they're kept until a later untick.
 // 2. localStorage, for logged-out users (and as a fallback before the first snapshot):
 //    Logged in:  synced-progress-cache = { completed: { [pattern]: ["slug/", ...] }, starred: ... }
 //                (only refreshed when NeetCode renders a problem table, so often stale)
@@ -70,9 +71,9 @@ const EMPTY = () => ({ server: null, marks: {}, accepted: {} });
 
 // Folds one captured API call into the saved state. Returns the new state, or null if the call
 // didn't say anything about progress.
-//   server:   { at, slugs }            full snapshot (LeetCode slugs, like NeetCode's `link`)
-//   marks:    { [slug]: { done, at } } checkbox clicks since the snapshot
-//   accepted: { [problemId]: at }      Accepted submissions since the snapshot (NeetCode ids)
+//   server:   { at, slugs }            checkbox list (LeetCode slugs, like NeetCode's `link`)
+//   marks:    { [slug]: { done, at } } checkbox clicks; unticks are kept so they still beat older solves
+//   accepted: { [problemId]: at }      Accepted submissions (NeetCode ids, as in /problems/<id>), kept
 export function applyCapture(state, cap, now = new Date().toISOString()) {
   if (cap.status !== 200) return null;
   const req = parseJson(cap.body)?.data ?? {};
@@ -92,8 +93,9 @@ export function applyCapture(state, cap, now = new Date().toISOString()) {
       if (!res || typeof res !== "object") return null;
       const slugs = new Set();
       collect(res, slugs);
-      // The snapshot already reflects everything before it.
-      return { server: { at: now, slugs: [...slugs] }, marks: {}, accepted: {} };
+      // The list already reflects earlier ticks; unticks and editor solves still matter.
+      const marks = Object.fromEntries(Object.entries(next.marks).filter(([, m]) => !m.done));
+      return { server: { at: now, slugs: [...slugs] }, marks, accepted: next.accepted };
     }
     case "markProblemComplete":
     case "markProblemIncomplete": {
@@ -107,13 +109,16 @@ export function applyCapture(state, cap, now = new Date().toISOString()) {
   }
 }
 
-// Newest signal wins: an Accepted submission, a checkbox click, then the snapshot (or localStorage).
+// An editor solve counts unless it was unticked later. Otherwise a checkbox click newer than the
+// list wins, then the list itself (or localStorage before the first list is seen).
 export function isSolved(q, state, fallback) {
-  const acc = [q.ncLink, q.slug].map((k) => k && state?.accepted?.[normalizeSlug(k)]).filter(Boolean).sort().at(-1);
+  const keys = [q.slug, q.ncLink].filter(Boolean).map(normalizeSlug);
+  const acc = keys.map((k) => state?.accepted?.[k]).filter(Boolean).sort().at(-1);
   const mark = state?.marks?.[q.slug];
   if (acc && (!mark || acc >= mark.at)) return true;
-  if (mark) return mark.done;
-  return state?.server ? state.server.slugs.includes(q.slug) : fallback.has(q.slug);
+  if (mark && (!state.server || mark.at > state.server.at)) return mark.done;
+  const base = state?.server ? new Set(state.server.slugs) : fallback;
+  return keys.some((k) => base.has(k));
 }
 
 const listeners = new Set();
