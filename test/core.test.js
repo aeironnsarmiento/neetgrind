@@ -6,7 +6,7 @@ import { extractNeetcodeProblems } from "../src/data/neetcodeSource.js";
 import { indexNeetcode, mapQuestion, UNMATCHED_OVERRIDES } from "../src/core/mapping.js";
 import { NC_NODES, TOPO_LABELS, TOPO_RANK, ancestorsOf, visibleGraph } from "../src/core/roadmap.js";
 import { assignWeeks, buildSchedule, groupQuestions, orderQuestions, parseGrindParams, selectQuestions, DEFAULT_SETTINGS } from "../src/core/scheduler.js";
-import { dailyTarget, planPosition, paceSummary } from "../src/core/daily.js";
+import { dailyTarget, nextDayTarget, planPosition, paceSummary } from "../src/core/daily.js";
 
 // Fixtures are the live bundles (not committed). Download them with `npm run fixtures`.
 const fx = (name) => new URL(`./fixtures/${name}`, import.meta.url);
@@ -152,6 +152,20 @@ test("daily target splits by minutes, so easy days get more questions", () => {
   assert.equal(dailyTarget(medium, none, day1).slugs.length, 2);
   // Last day of the week takes everything left.
   assert.equal(dailyTarget(medium, none, new Date("2026-09-07T00:00:00Z")).slugs.length, 11);
+});
+
+test("nextDayTarget pulls the next day's share, skipping days already covered", () => {
+  const questions = Array.from({ length: 14 }, (_, i) => ({ slug: `q${i}`, week: i < 7 ? 1 : 2 }));
+  const plan = { startDate: "2026-09-01", settings: { weeks: 2 }, questions };
+  const doneUpTo = (n) => (q) => Number(q.slug.slice(1)) < n;
+  // Day 1, today's q0 done: tomorrow spreads q1..q6 over 6 days.
+  assert.deepEqual(nextDayTarget(plan, doneUpTo(1), new Date("2026-09-01T12:00:00Z")).slugs, ["q1"]);
+  // All of week 1 done on day 1: the rest of week 1 is empty, so it jumps to week 2.
+  const w2 = nextDayTarget(plan, doneUpTo(7), new Date("2026-09-01T12:00:00Z"));
+  assert.equal(w2.pos.week, 2);
+  assert.deepEqual(w2.slugs, ["q7"]);
+  // Everything done: nothing to pull.
+  assert.deepEqual(nextDayTarget(plan, () => true, new Date("2026-09-01T12:00:00Z")).slugs, []);
 });
 
 test("parseGrindParams accepts every Grind 75 grouping", () => {

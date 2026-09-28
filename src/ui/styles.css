@@ -132,6 +132,7 @@
 .ng-progress-fill { height: 100%; background: var(--ng-done); }
 .ng-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ng-muted-fg); margin-bottom: 2px; }
 .ng-today { display: flex; flex-direction: column; border-top: 1px solid var(--ng-border); padding-top: 8px; }
+.ng-today-done { padding-top: 4px; }
 
 .ng-q { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 2px 0; font-size: 13px; }
 .ng-q-title { flex: 1; min-width: 0; color: var(--ng-fg); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -151,7 +152,8 @@
 .ng-tag-lc { color: var(--ng-warn); }
 .ng-tag-co { display: inline-flex; align-items: center; gap: 4px; max-width: 140px; color: var(--ng-primary); background: color-mix(in oklab, var(--ng-primary) 14%, transparent); }
 .ng-co-name { overflow: hidden; text-overflow: ellipsis; }
-.ng-co-icon { flex: none; vertical-align: -1px; }
+.ng-co-icon { display: inline-block; flex: none; vertical-align: -1px; }
+.ng-co-summary { display: flex; align-items: center; gap: 4px; }
 .ng-co-line { display: flex; flex-direction: column; gap: 2px; }
 .ng-co-update { color: var(--ng-warn); }
 .ng-co-chips { flex-wrap: wrap; gap: 6px; }

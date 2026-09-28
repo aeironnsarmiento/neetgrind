@@ -49,6 +49,17 @@ export function dailyTarget(plan, isDone, now = new Date()) {
   return { pos, slugs };
 }
 
+// For "Start next day": the first upcoming day's quota that still has something to do, as if
+// that day had already come. Walks forward past days whose share is already done.
+export function nextDayTarget(plan, isDone, now = new Date()) {
+  const daysLeft = plan.settings.weeks * 7 - (utcDay(now) - utcDay(plan.startDate));
+  for (let d = 1; d <= Math.max(1, daysLeft); d++) {
+    const next = dailyTarget(plan, isDone, new Date(new Date(now).getTime() + d * DAY_MS));
+    if (next.slugs.length) return next;
+  }
+  return { pos: planPosition(plan, now), slugs: [] };
+}
+
 export function paceSummary(plan, isDone, now = new Date()) {
   const pos = planPosition(plan, now);
   const done = plan.questions.filter(isDone).length;

@@ -1,7 +1,7 @@
 // neetcode.io/roadmap: "NeetCode | My Plan" toggle. My Plan swaps the graph for the custom
 // plan graph and the stats card for a plan card. The streak card is left alone.
 
-import { dailyTarget, paceSummary, todayUtcISO, utcDay } from "../core/daily.js";
+import { dailyTarget, nextDayTarget, paceSummary, todayUtcISO, utcDay } from "../core/daily.js";
 import { indexNeetcode, mapQuestion, problemUrl } from "../core/mapping.js";
 import { TOPO_LABELS } from "../core/roadmap.js";
 import { bestFrequency, buildSchedule, COMPANY_LIMITS, companySettings, DEFAULT_SETTINGS, DIFFICULTIES, groupQuestions, GROUPING_LABELS, GROUPINGS, ORDER_LABELS, ORDERS, totalHours, withCompanies } from "../core/scheduler.js";
@@ -116,13 +116,21 @@ export function initRoadmapPage() {
     if (state.drawer === "replan") render();
   }
 
-  function todaySlugs(plan, isDone) {
+  // Today's list, cached per UTC day. `ahead` counts days pulled in early with "Start next day".
+  function todayList(plan, isDone) {
     const day = todayUtcISO();
     const cached = storage.get("today", null);
-    if (cached && cached.planId === plan.id && cached.day === day && cached.order === plan.settings.order) return cached.slugs;
+    if (cached && cached.planId === plan.id && cached.day === day && cached.order === plan.settings.order) {
+      return { slugs: cached.slugs, ahead: cached.ahead ?? 0 };
+    }
     const { slugs } = dailyTarget(plan, isDone);
-    storage.set("today", { planId: plan.id, day, order: plan.settings.order, slugs });
-    return slugs;
+    storage.set("today", { planId: plan.id, day, order: plan.settings.order, slugs, ahead: 0 });
+    return { slugs, ahead: 0 };
+  }
+
+  function startNextDay(plan, isDone, ahead, slugs) {
+    storage.set("today", { planId: plan.id, day: todayUtcISO(), order: plan.settings.order, slugs, ahead: ahead + 1 });
+    render();
   }
 
   // --- mounting -----------------------------------------------------------------------------
@@ -210,7 +218,7 @@ export function initRoadmapPage() {
       stats.set(q.pattern, st);
     }
     const bySlug = new Map((sched?.questions ?? []).map((q) => [q.slug, q]));
-    const todayTopics = new Set(sched ? todaySlugs(sched, isDone).map((s) => bySlug.get(s)?.pattern) : []);
+    const todayTopics = new Set(sched ? todayList(sched, isDone).slugs.map((s) => bySlug.get(s)?.pattern) : []);
     const graph = renderPlanGraph({
       stats,
       focus: todayTopics,
@@ -275,9 +283,10 @@ export function initRoadmapPage() {
     }
     const pace = paceSummary(sched, isDone);
     const { pos } = pace;
-    const today = todaySlugs(sched, isDone);
+    const today = todayList(sched, isDone);
     const bySlug = new Map(sched.questions.map((q) => [q.slug, q]));
-    const todayQs = today.map((slug) => bySlug.get(slug)).filter(Boolean);
+    const todayQs = today.slugs.map((slug) => bySlug.get(slug)).filter(Boolean);
+    const upNext = pos.state !== "not-started" && todayQs.every(isDone) ? nextDayTarget(sched, isDone).slugs : [];
     const next = todayQs.find((q) => !isDone(q)) ?? sched.questions.find((q) => q.week <= pos.week && !isDone(q)) ?? sched.questions.find((q) => !isDone(q));
 
     const when =
@@ -300,10 +309,16 @@ export function initRoadmapPage() {
         pos.state === "not-started" ? `${sched.settings.weeks} wks · ${sched.settings.hours} h/wk` : `This week ${pace.weekDone}/${pace.weekTotal}`,
         pace.overdue ? h("span", { class: "ng-warn-text" }, ` · ${pace.overdue} overdue`) : null,
       ),
-      todayQs.length
+      todayQs.length || upNext.length
         ? h("div", { class: "ng-today" },
-            h("div", { class: "ng-label" }, "Today"),
+            h("div", { class: "ng-label" }, today.ahead ? `Today · ${today.ahead} day${today.ahead > 1 ? "s" : ""} ahead` : "Today"),
             todayQs.map((q) => questionRow(q, isDone, { compact: true })),
+            upNext.length
+              ? h("div", { class: "ng-muted ng-small ng-today-done" },
+                  "Done for today · ",
+                  h("button", { class: "ng-link", onclick: () => startNextDay(sched, isDone, today.ahead, upNext) }, "Start next day"),
+                )
+              : null,
           )
         : null,
       h("div", { class: "ng-row" },
@@ -327,8 +342,8 @@ export function initRoadmapPage() {
     const names = co.names.length > 2 ? `${co.names.slice(0, 2).join(", ")} +${co.names.length - 2}` : co.names.join(", ");
     const update = state.companyUpdate;
     return h("div", { class: "ng-co-line ng-small" },
-      h("div", { class: "ng-muted" },
-        buildingIcon(), ` ${sched.companyCount} company-tagged · ${names || "picked"} (${WINDOW_LABELS[co.window] ?? co.window})`,
+      h("div", { class: "ng-muted ng-co-summary" },
+        buildingIcon(), `${sched.companyCount} company-tagged · ${names || "picked"} (${WINDOW_LABELS[co.window] ?? co.window})`,
       ),
       update
         ? h("div", { class: "ng-co-update" },
