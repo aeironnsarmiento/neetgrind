@@ -1,6 +1,8 @@
 // Turns a week-based plan into "what to do today". NeetCode streaks roll over at UTC midnight,
 // so days here are UTC days too.
 
+import { costOf, EST_DURATION } from "./scheduler.js";
+
 export const DAY_MS = 86_400_000;
 
 export const utcDay = (date) => Math.floor(new Date(date).getTime() / DAY_MS);
@@ -25,14 +27,26 @@ export function backlog(questions, week, isDone) {
   return questions.filter((q) => q.week <= week && !isDone(q));
 }
 
-// Today's quota: spread the backlog evenly over the days left in this week.
+// Whole minutes, so the daily split below is exact integer math.
+const minutesOf = (q) => Math.round(costOf({ duration: q.duration ?? EST_DURATION[q.difficulty] ?? 30 }));
+
+// Today's quota: spread the backlog's minutes evenly over the days left in this week, so an
+// easy day gets more questions than a medium one. Takes questions in plan order until today's
+// share is reached (the last one may run over, like rounding up).
 // Call once per UTC day and cache the result, so finishing questions doesn't grow today's list.
 export function dailyTarget(plan, isDone, now = new Date()) {
   const pos = planPosition(plan, now);
   if (pos.state === "not-started") return { pos, slugs: [] };
   const pending = backlog(plan.questions, pos.week, isDone);
-  const count = Math.ceil(pending.length / pos.daysLeftInWeek);
-  return { pos, slugs: pending.slice(0, count).map((q) => q.slug) };
+  const total = pending.reduce((sum, q) => sum + minutesOf(q), 0);
+  const slugs = [];
+  let used = 0;
+  for (const q of pending) {
+    if (used * pos.daysLeftInWeek >= total) break;
+    used += minutesOf(q);
+    slugs.push(q.slug);
+  }
+  return { pos, slugs };
 }
 
 export function paceSummary(plan, isDone, now = new Date()) {

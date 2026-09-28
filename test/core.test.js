@@ -141,6 +141,19 @@ test("daily target spreads backlog over UTC days left in the week", () => {
   assert.equal(paceSummary(plan, (q) => q.slug === "q0", new Date("2026-09-08T00:00:00Z")).overdue, 6);
 });
 
+test("daily target splits by minutes, so easy days get more questions", () => {
+  const mk = (d, n, week = 1) => Array.from({ length: n }, (_, i) => ({ slug: `${d}${i}`, week, difficulty: d, duration: d === "Easy" ? 18 : 28 }));
+  const none = () => false;
+  const day1 = new Date("2026-09-01T00:00:00Z");
+  // ~10h/week: 17 easy (35 min each) vs 11 medium (55 min each), 7 days left.
+  const easy = { startDate: "2026-09-01", settings: { weeks: 1 }, questions: mk("Easy", 17) };
+  const medium = { startDate: "2026-09-01", settings: { weeks: 1 }, questions: mk("Medium", 11) };
+  assert.equal(dailyTarget(easy, none, day1).slugs.length, 3);
+  assert.equal(dailyTarget(medium, none, day1).slugs.length, 2);
+  // Last day of the week takes everything left.
+  assert.equal(dailyTarget(medium, none, new Date("2026-09-07T00:00:00Z")).slugs.length, 11);
+});
+
 test("parseGrindParams accepts every Grind 75 grouping", () => {
   for (const g of ["weeks", "topics", "difficulty", "none"]) assert.equal(parseGrindParams(`?grouping=${g}`).grouping, g);
   assert.equal(parseGrindParams("?grouping=bogus").grouping, "weeks");
