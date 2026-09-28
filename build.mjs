@@ -23,7 +23,7 @@ const header = `// ==UserScript==
 // @connect      neetcode.io
 // @connect      raw.githubusercontent.com
 // @connect      api.github.com
-// @run-at       document-idle
+// @run-at       document-start
 // @noframes
 // ==/UserScript==
 `;

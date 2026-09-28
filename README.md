@@ -79,7 +79,10 @@ Every order uses the same questions, chosen by Grind 75. Only when each one come
 Solving a problem in NeetCode's editor counts. Every NeetGrind link opens the NeetCode problem page. The 15 Grind 75 questions NeetCode doesn't have are marked **LC**, link to LeetCode, and are ticked off inside NeetGrind.
 
 **Does it change my NeetCode account?**
-No. NeetGrind only reads the progress NeetCode already stores in your browser.
+No. NeetGrind only reads progress NeetCode already loads in your browser. When you're logged in, NeetCode keeps your progress on its server, so NeetGrind reads the responses NeetCode's own page receives (your solved list, checkbox clicks, and Accepted submissions). It never sends requests of its own or touches your login.
+
+**A solved problem isn't ticked.**
+Open [neetcode.io/roadmap](https://neetcode.io/roadmap) once in a tab where NeetGrind is running; that loads your solved list from NeetCode. Submissions made while NeetGrind is running are ticked right away. If one still isn't, turn on debug logging by running `localStorage.setItem("neetgrind:debug", "1")` in the browser console on neetcode.io, submit again, and include the `[NeetGrind] captured` lines in an [issue](https://github.com/aeironnsarmiento/neetgrind/issues) (they don't include your code).
 
 **Where is my plan stored?**
 In Tampermonkey's storage on your machine. That storage is shared between Grind 75 and NeetCode, which is how the plan gets from one to the other.
@@ -102,7 +105,7 @@ npm run build      # → dist/neetgrind.user.js
 ```
 src/core/      scheduling logic: Grind 75 scheduler, Recommended order, roadmap graph, topic matching, daily targets
 src/data/      site data loaders, saved plan, NeetCode progress reader
-src/platform/  storage + HTTP (swap these to port to a browser extension)
+src/platform/  storage, HTTP, and the hook that reads NeetCode's API responses (swap these to port to a browser extension)
 src/ui/        Grind 75 panel, NeetCode roadmap view, styles
 ```
 

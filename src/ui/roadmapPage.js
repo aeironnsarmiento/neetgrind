@@ -7,7 +7,7 @@ import { TOPO_LABELS } from "../core/roadmap.js";
 import { bestFrequency, buildSchedule, COMPANY_LIMITS, companySettings, DEFAULT_SETTINGS, DIFFICULTIES, groupQuestions, GROUPING_LABELS, GROUPINGS, ORDER_LABELS, ORDERS, totalHours, withCompanies } from "../core/scheduler.js";
 import { buildCompanyPool, CO_REPO_URL, latestVersion, loadCompanyNames, WINDOW_LABELS, WINDOWS } from "../data/companySource.js";
 import { GRIND_PAGE, loadGrindQuestions } from "../data/grindSource.js";
-import { lcDone, makeIsDone } from "../data/neetcodeProgress.js";
+import { lcDone, makeIsDone, onProgress } from "../data/neetcodeProgress.js";
 import { loadNeetcodeProblems } from "../data/neetcodeSource.js";
 import { createPlan, planStore } from "../data/planStore.js";
 import { storage } from "../platform/storage.js";
@@ -739,7 +739,9 @@ export function initRoadmapPage() {
   setInterval(tick, 400);
   tick();
 
-  // Progress lives in NeetCode's localStorage; refresh when it may have changed.
+  // Progress comes from NeetCode's API calls (this tab) and localStorage/GM storage (other tabs);
+  // refresh when either may have changed.
+  onProgress(render);
   window.addEventListener("focus", render);
   window.addEventListener("storage", render);
   window.addEventListener("resize", () => mounted() && state.mode === "plan" && placeCard());
