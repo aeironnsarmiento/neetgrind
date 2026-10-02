@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/dist/neetgrind.user.js
 // @license      MIT
 // @icon         https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/assets/icon-64.png
-// @version      0.2.6
+// @version      0.2.7
 // @description  Build a custom Grind 75 study plan and view it on NeetCode's roadmap graph.
 // @match        https://www.techinterviewhandbook.org/grind75*
 // @match        https://neetcode.io/*
@@ -1081,7 +1081,7 @@
 .ng-btn-primary:hover { background: color-mix(in oklab, var(--ng-primary) 85%, black); }
 .ng-btn-ghost { background: transparent; border-color: transparent; }
 .ng-icon-btn { width: 32px; padding: 0; }
-.ng-btn:focus-visible, .ng-seg:focus-visible, .ng-q-title:focus-visible, .ng-zoom-btn:focus-visible, .ng-node:focus-visible {
+.ng-btn:focus-visible, .ng-seg:focus-visible, .ng-q-title:focus-visible, .ng-dot:focus-visible, .ng-zoom-btn:focus-visible, .ng-node:focus-visible {
   outline: 2px solid var(--ng-primary); outline-offset: 2px;
 }
 .ng-input {
@@ -1168,6 +1168,13 @@
 .ng-q-title:hover { text-decoration: underline; color: var(--ng-primary); }
 .ng-q-done .ng-q-title { color: var(--ng-muted-fg); }
 .ng-check { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--ng-done); }
+.ng-dot {
+  flex: none; width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1.5px solid var(--ng-border);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1;
+  background: transparent; color: var(--ng-bg); cursor: pointer;
+}
+.ng-dot:hover { border-color: var(--ng-done); }
+.ng-dot-done { background: var(--ng-done); border-color: var(--ng-done); }
 .ng-diff { flex: none; font-size: 12px; font-weight: 500; min-width: 48px; text-align: right; }
 .ng-easy { color: var(--ng-easy); }
 .ng-medium { color: var(--ng-medium); }
@@ -2039,15 +2046,15 @@
     function questionRow(q, isDone, { compact = false, tag = null } = {}) {
       const done = isDone(q);
       const locked = isDone.onNeetCode(q);
-      const status = h("input", {
-        type: "checkbox",
-        class: "ng-check",
-        checked: done,
-        disabled: locked,
-        title: locked ? "Completed on NeetCode" : "Tick if you solved it on LeetCode",
+      const status = h("button", {
+        type: "button",
+        class: `ng-dot ${done ? "ng-dot-done" : ""}`,
+        role: "checkbox",
+        "aria-checked": String(done),
         "aria-label": `Mark ${q.title} done`,
-        onchange: () => (lcDone.toggle(q.slug), render())
-      });
+        title: locked ? "Completed on NeetCode" : done ? "Marked done here; click to undo" : "Click if you solved it on LeetCode",
+        onclick: () => locked || (lcDone.toggle(q.slug), render())
+      }, done ? "\u2713" : "");
       return h(
         "div",
         { class: `ng-q ${done ? "ng-q-done" : ""}` },
