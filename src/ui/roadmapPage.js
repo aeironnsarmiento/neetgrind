@@ -379,15 +379,17 @@ export function initRoadmapPage() {
 
   function questionRow(q, isDone, { compact = false, tag = null } = {}) {
     const done = isDone(q);
-    const status = q.leetcodeOnly
-      ? h("input", {
-          type: "checkbox",
-          class: "ng-check",
-          checked: done,
-          "aria-label": `Mark ${q.title} done (LeetCode only)`,
-          onchange: () => (lcDone.toggle(q.slug), render()),
-        })
-      : h("span", { class: `ng-dot ${done ? "ng-dot-done" : ""}`, title: done ? "Completed on NeetCode" : "Not completed on NeetCode" }, done ? "✓" : "");
+    // Solves made on LeetCode aren't visible to NeetCode, so any row can be ticked by hand.
+    const locked = isDone.onNeetCode(q);
+    const status = h("input", {
+      type: "checkbox",
+      class: "ng-check",
+      checked: done,
+      disabled: locked,
+      title: locked ? "Completed on NeetCode" : "Tick if you solved it on LeetCode",
+      "aria-label": `Mark ${q.title} done`,
+      onchange: () => (lcDone.toggle(q.slug), render()),
+    });
     return h(
       "div",
       { class: `ng-q ${done ? "ng-q-done" : ""}` },

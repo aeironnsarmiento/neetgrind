@@ -7,7 +7,8 @@
 //    Logged in:  synced-progress-cache = { completed: { [pattern]: ["slug/", ...] }, starred: ... }
 //                (only refreshed when NeetCode renders a problem table, so often stale)
 //    Logged out: completed-problem-list = { [pattern]: ["slug/", ...] }
-// 3. lcDone: LeetCode-only questions, ticked inside NeetGrind.
+// 3. lcDone: questions ticked inside NeetGrind. LeetCode-only questions, and NeetCode ones solved
+//    on LeetCode (NeetCode can't see those).
 // Set localStorage "neetgrind:debug" to "1" to log every captured API response.
 
 import { normalizeSlug } from "../core/mapping.js";
@@ -154,7 +155,8 @@ export function recordCapture(cap) {
   listeners.forEach((fn) => fn());
 }
 
-// LeetCode-only questions have no NeetCode checkbox, so they're ticked locally.
+// Ticked locally: LeetCode-only questions have no NeetCode checkbox, and NeetCode doesn't know
+// about solves made on LeetCode.
 export const lcDone = {
   all: () => storage.get("lcDone", {}),
   toggle(slug) {
@@ -169,5 +171,9 @@ export function makeIsDone() {
   const state = storage.get("ncProgress", null);
   const ls = readCompletedSlugs();
   const lc = lcDone.all();
-  return (q) => (q.leetcodeOnly ? Boolean(lc[q.slug]) : isSolved(q, state, ls));
+  const onNeetCode = (q) => !q.leetcodeOnly && isSolved(q, state, ls);
+  const isDone = (q) => Boolean(lc[q.slug]) || onNeetCode(q);
+  // NeetCode's own record, without local ticks: those rows can't be unticked from here.
+  isDone.onNeetCode = onNeetCode;
+  return isDone;
 }

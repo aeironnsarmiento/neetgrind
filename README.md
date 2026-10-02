@@ -76,7 +76,7 @@ Every order uses the same questions, chosen by Grind 75. Only when each one come
 ## FAQ
 
 **Does this count toward my NeetCode streak?**
-Solving a problem in NeetCode's editor counts. Every NeetGrind link opens the NeetCode problem page. The 15 Grind 75 questions NeetCode doesn't have are marked **LC**, link to LeetCode, and are ticked off inside NeetGrind.
+Solving a problem in NeetCode's editor counts. Every NeetGrind link opens the NeetCode problem page. The 15 Grind 75 questions NeetCode doesn't have are marked **LC**, link to LeetCode, and are ticked off inside NeetGrind. Solved a NeetCode question on LeetCode instead? NeetCode can't see that, so tick its checkbox in NeetGrind yourself.
 
 **Does it change my NeetCode account?**
 No. NeetGrind only reads progress NeetCode already loads in your browser. When you're logged in, NeetCode keeps your progress on its server, so NeetGrind reads the responses NeetCode's own page receives (your solved list, checkbox clicks, and Accepted submissions). It never sends requests of its own or touches your login.
