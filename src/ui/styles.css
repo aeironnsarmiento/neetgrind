@@ -52,7 +52,7 @@
 .ng-btn-primary:hover { background: color-mix(in oklab, var(--ng-primary) 85%, black); }
 .ng-btn-ghost { background: transparent; border-color: transparent; }
 .ng-icon-btn { width: 32px; padding: 0; }
-.ng-btn:focus-visible, .ng-seg:focus-visible, .ng-q-title:focus-visible, .ng-zoom-btn:focus-visible, .ng-node:focus-visible {
+.ng-btn:focus-visible, .ng-seg:focus-visible, .ng-q-title:focus-visible, .ng-dot:focus-visible, .ng-zoom-btn:focus-visible, .ng-node:focus-visible {
   outline: 2px solid var(--ng-primary); outline-offset: 2px;
 }
 .ng-input {
@@ -139,6 +139,13 @@
 .ng-q-title:hover { text-decoration: underline; color: var(--ng-primary); }
 .ng-q-done .ng-q-title { color: var(--ng-muted-fg); }
 .ng-check { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--ng-done); }
+.ng-dot {
+  flex: none; width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1.5px solid var(--ng-border);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1;
+  background: transparent; color: var(--ng-bg); cursor: pointer;
+}
+.ng-dot:hover { border-color: var(--ng-done); }
+.ng-dot-done { background: var(--ng-done); border-color: var(--ng-done); }
 .ng-diff { flex: none; font-size: 12px; font-weight: 500; min-width: 48px; text-align: right; }
 .ng-easy { color: var(--ng-easy); }
 .ng-medium { color: var(--ng-medium); }
