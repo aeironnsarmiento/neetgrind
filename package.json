@@ -1,6 +1,6 @@
 {
   "name": "neetgrind",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "description": "Build a custom Grind 75 study plan and view it on NeetCode's roadmap graph.",
   "type": "module",

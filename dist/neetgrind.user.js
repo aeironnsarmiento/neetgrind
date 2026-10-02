@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/dist/neetgrind.user.js
 // @license      MIT
 // @icon         https://raw.githubusercontent.com/aeironnsarmiento/neetgrind/main/assets/icon-64.png
-// @version      0.2.5
+// @version      0.2.6
 // @description  Build a custom Grind 75 study plan and view it on NeetCode's roadmap graph.
 // @match        https://www.techinterviewhandbook.org/grind75*
 // @match        https://neetcode.io/*
@@ -292,7 +292,10 @@
     const state = storage.get("ncProgress", null);
     const ls = readCompletedSlugs();
     const lc = lcDone.all();
-    return (q) => q.leetcodeOnly ? Boolean(lc[q.slug]) : isSolved(q, state, ls);
+    const onNeetCode = (q) => !q.leetcodeOnly && isSolved(q, state, ls);
+    const isDone = (q) => Boolean(lc[q.slug]) || onNeetCode(q);
+    isDone.onNeetCode = onNeetCode;
+    return isDone;
   }
 
   // src/platform/netHook.js
@@ -1164,11 +1167,6 @@
 .ng-q-title { flex: 1; min-width: 0; color: var(--ng-fg); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ng-q-title:hover { text-decoration: underline; color: var(--ng-primary); }
 .ng-q-done .ng-q-title { color: var(--ng-muted-fg); }
-.ng-dot {
-  flex: none; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--ng-border);
-  display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: var(--ng-bg);
-}
-.ng-dot-done { background: var(--ng-done); border-color: var(--ng-done); }
 .ng-check { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--ng-done); }
 .ng-diff { flex: none; font-size: 12px; font-weight: 500; min-width: 48px; text-align: right; }
 .ng-easy { color: var(--ng-easy); }
@@ -2040,13 +2038,16 @@
     }
     function questionRow(q, isDone, { compact = false, tag = null } = {}) {
       const done = isDone(q);
-      const status = q.leetcodeOnly ? h("input", {
+      const locked = isDone.onNeetCode(q);
+      const status = h("input", {
         type: "checkbox",
         class: "ng-check",
         checked: done,
-        "aria-label": `Mark ${q.title} done (LeetCode only)`,
+        disabled: locked,
+        title: locked ? "Completed on NeetCode" : "Tick if you solved it on LeetCode",
+        "aria-label": `Mark ${q.title} done`,
         onchange: () => (lcDone.toggle(q.slug), render())
-      }) : h("span", { class: `ng-dot ${done ? "ng-dot-done" : ""}`, title: done ? "Completed on NeetCode" : "Not completed on NeetCode" }, done ? "\u2713" : "");
+      });
       return h(
         "div",
         { class: `ng-q ${done ? "ng-q-done" : ""}` },
